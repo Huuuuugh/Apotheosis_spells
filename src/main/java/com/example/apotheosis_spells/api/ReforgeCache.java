@@ -63,13 +63,13 @@ public class ReforgeCache {
         public static Data read(CompoundTag t) {
             if (t == null || t.isEmpty()) return DEF;
             return new Data(
-                    t.getFloat("d"),
-                    t.getFloat("m"),
-                    t.getFloat("c"),
-                    t.getFloat("t"),
-                    t.getInt("l"),
-                    t.contains("r") ? t.getFloat("r") : 1,
-                    t.contains("du") ? t.getFloat("du") : 1,
+                    t.contains("d") ? t.getFloat("d") : 1f,
+                    t.contains("m") ? t.getFloat("m") : 1f,
+                    t.contains("c") ? t.getFloat("c") : 1f,
+                    t.contains("t") ? t.getFloat("t") : 1f,
+                    t.contains("l") ? t.getInt("l") : 0,
+                    t.contains("r") ? t.getFloat("r") : 1f,
+                    t.contains("du") ? t.getFloat("du") : 1f,
                     t.contains("sf") ? t.getInt("sf") : 0
             );
         }
