@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.List;
@@ -50,17 +51,19 @@ public class TooltipUtilsMixin {
         if (spellData == null || spellData == SpellData.EMPTY) return;
 
         ItemStack bookStack = stack;
+        int slotIndex = -1;
+
         if (bookStack == null || bookStack.isEmpty()) {
             bookStack = io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player);
         }
 
-        ReforgedSpellCalculator calc = null;
         if (bookStack != null && !bookStack.isEmpty() && bookStack.getItem() instanceof SpellBook) {
-            calc = ReforgedSpellCalculator.fromStack(bookStack, player);
+            slotIndex = ReforgeCache.resolveSelectedSpellIndex(bookStack, player);
         }
 
-        ReforgeCache.Data data = calc != null ? calc.getData() : ReforgeCache.Data.DEF;
-        int slotIndex = calc != null ? calc.getSpellSlotIndex() : -1;
+        ReforgeCache.Data data = (bookStack != null && !bookStack.isEmpty())
+                ? ReforgeCache.resolveDataFromStack(bookStack, player)
+                : ReforgeCache.Data.DEF;
         SpellCastHooks.set(new SpellCastHooks.Context(bookStack, player, slotIndex, spellData.getLevel(), data, spellData));
     }
 
@@ -71,104 +74,91 @@ public class TooltipUtilsMixin {
         SpellCastHooks.clear();
     }
 
-    /**
-     * 拦截 getSpellPower：使用 ReforgedSpellCalculator 计算
-     */
-    @Inject(method = "formatScrollTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"),
-            cancellable = true)
-    private static void onGetSpellPowerScroll(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source,
-                                            CallbackInfoReturnable<Float> cir) {
+    // ==================== formatScrollTooltip 重定向 ====================
+
+    @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"))
+    private static float redirectGetSpellPower(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getSpellPower(spellLevel, source);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        float result = calc.getSpellPower(spellLevel, (LivingEntity) source);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getSpellPower(spellLevel, source);
+        }
+        return calc.getSpellPower(spellLevel, (LivingEntity) source);
     }
 
-    /**
-     * 拦截 getManaCost：使用 ReforgedSpellCalculator 计算
-     */
-    @Inject(method = "formatScrollTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"),
-            cancellable = true)
-    private static void onGetManaCostScroll(AbstractSpell spell, int level,
-                                           CallbackInfoReturnable<Integer> cir) {
+    @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"))
+    private static int redirectGetManaCost(AbstractSpell spell, int level) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getManaCost(level);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        int result = calc.getManaCost(level);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getManaCost(level);
+        }
+        return calc.getManaCost(level);
     }
 
-    /**
-     * 拦截 getEffectiveCastTime：使用 ReforgedSpellCalculator 计算
-     */
-    @Inject(method = "formatScrollTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"),
-            cancellable = true)
-    private static void onGetEffectiveCastTimeScroll(AbstractSpell spell, int spellLevel, LivingEntity entity,
-                                                   CallbackInfoReturnable<Integer> cir) {
+    @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
+    private static int redirectGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getEffectiveCastTime(spellLevel, entity);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        int result = calc.getEffectiveCastTime(spellLevel, entity);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getEffectiveCastTime(spellLevel, entity);
+        }
+        return calc.getEffectiveCastTime(spellLevel, entity);
     }
 
-    // ==================== formatActiveSpellTooltip ====================
+    // ==================== formatActiveSpellTooltip 重定向 ====================
 
-    @Inject(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"),
-            cancellable = true)
-    private static void onGetSpellPowerActive(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source,
-                                            CallbackInfoReturnable<Float> cir) {
+    @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"))
+    private static float redirectActiveGetSpellPower(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getSpellPower(spellLevel, source);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        float result = calc.getSpellPower(spellLevel, (LivingEntity) source);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getSpellPower(spellLevel, source);
+        }
+        return calc.getSpellPower(spellLevel, (LivingEntity) source);
     }
 
-    @Inject(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"),
-            cancellable = true)
-    private static void onGetManaCostActive(AbstractSpell spell, int level,
-                                           CallbackInfoReturnable<Integer> cir) {
+    @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"))
+    private static int redirectActiveGetManaCost(AbstractSpell spell, int level) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getManaCost(level);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        int result = calc.getManaCost(level);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getManaCost(level);
+        }
+        return calc.getManaCost(level);
     }
 
-    @Inject(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"),
-            cancellable = true)
-    private static void onGetEffectiveCastTimeActive(AbstractSpell spell, int spellLevel, LivingEntity entity,
-                                                   CallbackInfoReturnable<Integer> cir) {
+    @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
+    private static int redirectActiveGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
+            return spell.getEffectiveCastTime(spellLevel, entity);
+        }
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) return;
-
-        int result = calc.getEffectiveCastTime(spellLevel, entity);
-        cir.setReturnValue(result);
+        if (calc == null) {
+            return spell.getEffectiveCastTime(spellLevel, entity);
+        }
+        return calc.getEffectiveCastTime(spellLevel, entity);
     }
 }
