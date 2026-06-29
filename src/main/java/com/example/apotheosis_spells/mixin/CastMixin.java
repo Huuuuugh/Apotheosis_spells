@@ -97,43 +97,31 @@ public class CastMixin {
         SpellCastHooks.clear();
     }
 
-    @Inject(method = "getSpellPower", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getSpellPower", at = @At("HEAD"), cancellable = true)
     private void onGetSpellPower(int spellLevel, net.minecraft.world.entity.Entity src, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        if (ctx.data().dmg() == 1f) return;
-
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
         if (calc == null) return;
-
-        float result = calc.getSpellPower(spellLevel, ctx.caster());
-        cir.setReturnValue(result);
+        cir.setReturnValue(calc.getSpellPower(spellLevel, ctx.caster()));
     }
 
-    @Inject(method = "getManaCost", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getManaCost", at = @At("HEAD"), cancellable = true)
     private void onGetManaCost(int spellLevel, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        if (ctx.data().mana() == 1f) return;
-
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
         if (calc == null) return;
-
-        int result = calc.getManaCost(spellLevel);
-        cir.setReturnValue(result);
+        cir.setReturnValue(calc.getManaCost(spellLevel));
     }
 
-    @Inject(method = "getEffectiveCastTime", at = @At("RETURN"), cancellable = true)
+    @Inject(method = "getEffectiveCastTime", at = @At("HEAD"), cancellable = true)
     private void onGetEffectiveCastTime(int spellLevel, LivingEntity entity, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        if (ctx.data().cast() == 1f) return;
-
         ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
         if (calc == null) return;
-
-        int result = calc.getEffectiveCastTime(spellLevel, entity);
-        cir.setReturnValue(result);
+        cir.setReturnValue(calc.getEffectiveCastTime(spellLevel, entity));
     }
 
     private static ItemStack resolveCastingStack(ItemStack stack, String slot, Player player) {
