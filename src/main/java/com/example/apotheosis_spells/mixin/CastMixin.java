@@ -150,6 +150,37 @@ public class CastMixin {
         }
     }
 
+    @Inject(method = "getLevelFor", at = @At("HEAD"), cancellable = true)
+    private void onGetLevelFor(int level, LivingEntity caster, CallbackInfoReturnable<Integer> cir) {
+        var ctx = SpellCastHooks.get();
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
+        if (ctx.data().lvl() == 0) return;
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, ctx.data().lvl());
+        SpellCastHooks.Context saved = ctx;
+        SpellCastHooks.clear();
+        try {
+            int base = ((AbstractSpell)(Object)this).getLevelFor(boosted, caster);
+            cir.setReturnValue(base);
+        } finally {
+            SpellCastHooks.set(saved);
+        }
+    }
+
+    @Inject(method = "getSpellCooldown", at = @At("HEAD"), cancellable = true)
+    private void onGetSpellCooldown(CallbackInfoReturnable<Integer> cir) {
+        var ctx = SpellCastHooks.get();
+        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
+        if (ctx.data().cd() == 1f) return;
+        SpellCastHooks.Context saved = ctx;
+        SpellCastHooks.clear();
+        try {
+            int base = ((AbstractSpell)(Object)this).getSpellCooldown();
+            cir.setReturnValue(ReforgedSpellCalculator.calcModifiedCooldown(base, ctx.data().cd()));
+        } finally {
+            SpellCastHooks.set(saved);
+        }
+    }
+
     private static ItemStack resolveCastingStack(ItemStack stack, String slot, Player player) {
         ItemStack castingStack = stack;
         if (castingStack != null && !castingStack.isEmpty()) return castingStack;
