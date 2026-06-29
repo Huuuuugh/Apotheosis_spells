@@ -1,5 +1,6 @@
 package com.example.apotheosis_spells.mixin;
 
+import com.example.apotheosis_spells.ApotheosisSpells;
 import com.example.apotheosis_spells.api.ReforgeCache;
 import com.example.apotheosis_spells.api.ReforgedSpellCalculator;
 import com.example.apotheosis_spells.handler.SpellCastHooks;
@@ -28,6 +29,7 @@ public class CastMixin {
                                           Player player, CastSource src,
                                           boolean triggerCooldown, String slot,
                                           CallbackInfoReturnable<Boolean> cir) {
+        // 在 HEAD 清空（而不是 RETURN），这样 mana 检查用原始值，但 castSpell 时 ctx 仍存在
         SpellCastHooks.clear();
         if (player == null || !(player instanceof ServerPlayer)) return;
 
@@ -75,6 +77,9 @@ public class CastMixin {
         }
         if (d == null) return;
 
+        ApotheosisSpells.LOGGER.info("[CastMixin] attemptInitiateCast: affixStack={}, slot={}, spellLevel={}, d={}",
+                affixStack.getItem(), slot, spellLevel, d);
+
         SpellData castingSpellData = null;
         if (ISpellContainer.isSpellContainer(affixStack)) {
             castingSpellData = ISpellContainer.get(affixStack).getSpellAtIndex(0);
@@ -87,7 +92,8 @@ public class CastMixin {
                                           Player player, CastSource src,
                                           boolean triggerCooldown, String slot,
                                           CallbackInfoReturnable<Boolean> cir) {
-        SpellCastHooks.clear();
+        // 不要在这里清除！attemptInitiateCast 在客户端运行，castSpell 在服务端运行
+        // SpellCastHooks 需要跨两个调用保持有效
     }
 
     @Inject(method = "castSpell", at = @At("RETURN"))
