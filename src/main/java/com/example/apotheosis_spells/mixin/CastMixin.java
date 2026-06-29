@@ -153,29 +153,27 @@ public class CastMixin {
     @Inject(method = "getLevelFor", at = @At("HEAD"), cancellable = true)
     private void onGetLevelFor(int level, LivingEntity caster, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
+        ApotheosisSpells.LOGGER.info("[CastMixin] getLevelFor: level={}, ctx={}", level, ctx != null ? ctx.data() : "null");
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
         if (ctx.data().lvl() == 0) return;
         int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, ctx.data().lvl());
-        SpellCastHooks.Context saved = ctx;
-        SpellCastHooks.clear();
-        try {
-            int base = ((AbstractSpell)(Object)this).getLevelFor(boosted, caster);
-            cir.setReturnValue(base);
-        } finally {
-            SpellCastHooks.set(saved);
-        }
+        ApotheosisSpells.LOGGER.info("[CastMixin] getLevelFor: boosted={}, result={}", boosted, boosted - level);
+        cir.setReturnValue(boosted);
     }
 
     @Inject(method = "getSpellCooldown", at = @At("HEAD"), cancellable = true)
     private void onGetSpellCooldown(CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
+        ApotheosisSpells.LOGGER.info("[CastMixin] getSpellCooldown: ctx={}", ctx != null ? ctx.data() : "null");
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
         if (ctx.data().cd() == 1f) return;
         SpellCastHooks.Context saved = ctx;
         SpellCastHooks.clear();
         try {
             int base = ((AbstractSpell)(Object)this).getSpellCooldown();
-            cir.setReturnValue(ReforgedSpellCalculator.calcModifiedCooldown(base, ctx.data().cd()));
+            int modified = ReforgedSpellCalculator.calcModifiedCooldown(base, ctx.data().cd());
+            ApotheosisSpells.LOGGER.info("[CastMixin] getSpellCooldown: base={}, modified={}", base, modified);
+            cir.setReturnValue(modified);
         } finally {
             SpellCastHooks.set(saved);
         }
