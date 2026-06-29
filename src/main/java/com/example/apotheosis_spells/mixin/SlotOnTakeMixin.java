@@ -17,7 +17,7 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
-import java.util.List;
+import java.util.Map;
 
 /**
  * 拦截 Slot.onTake，在 InscriptionTableMenu 的 resultSlot（index=2）被取走时
@@ -49,7 +49,7 @@ public class SlotOnTakeMixin {
         }
 
         int removedIndex = SlotOnTakeState.getRemovedIndex();
-        List<CompoundTag> remainingData = SlotOnTakeState.getRemainingData();
+        Map<Integer, CompoundTag> remainingData = SlotOnTakeState.getRemainingData();
 
         if (remainingData == null || remainingData.isEmpty()) {
             ApotheosisSpells.LOGGER.info("[SlotOnTakeMixin] onTake: rejected - remainingData empty");
@@ -87,31 +87,23 @@ public class SlotOnTakeMixin {
             CompoundTag containerNbt = bookNbt.getCompound(ISpellContainer.NBT);
             ListTag dataList = containerNbt.getList("data", 10);
 
+            // 按法术槽的稳定 index 字段精确恢复（而非按数组顺序），这样从中间取出法术时
+            // 其余法术也能拿回各自正确的 affix_data —— 修复"只能从后往前取"的错位。
             int restored = 0;
-            for (int i = 0; i < dataList.size() && restored < remainingData.size(); i++) {
+            for (int i = 0; i < dataList.size(); i++) {
                 CompoundTag slotTag = dataList.getCompound(i);
                 int idx = slotTag.getInt("index");
-
-                // 跳过被移除的 slot
                 if (idx == removedIndex) continue;
 
-                // 如果 slot 没有 affix_data，恢复它
-                if (!slotTag.contains(ReforgeCache.SLOT_AFFIX_DATA)) {
-                    CompoundTag toRestore = remainingData.get(restored);
-                    if (toRestore != null && !toRestore.isEmpty()) {
-                        slotTag.put(ReforgeCache.SLOT_AFFIX_DATA, toRestore.copy());
+                CompoundTag toRestore = remainingData.get(idx);
+                if (toRestore == null || toRestore.isEmpty()) continue;
 
-                        // 恢复 iss_reforge 缓存
-                        CompoundTag issReforge = toRestore.getCompound(ReforgeCache.KEY);
-                        if (issReforge != null && !issReforge.isEmpty()) {
-                            slotTag.put(ReforgeCache.KEY, issReforge.copy());
-                        }
-
-                        dataList.set(i, slotTag);
-                        restored++;
-                        ApotheosisSpells.LOGGER.info("[SlotOnTakeMixin] onTake: restored affix_data for slot idx={}", idx);
-                    }
-                }
+                slotTag.put(ReforgeCache.SLOT_AFFIX_DATA, toRestore.copy());
+                // 从恢复的 affix_data 重建 iss_reforge 缓存，保证施法/显示一致。
+                ReforgeCache.syncSlotTag(slotTag);
+                dataList.set(i, slotTag);
+                restored++;
+                ApotheosisSpells.LOGGER.info("[SlotOnTakeMixin] onTake: restored affix_data for slot idx={}", idx);
             }
 
             containerNbt.put("data", dataList);

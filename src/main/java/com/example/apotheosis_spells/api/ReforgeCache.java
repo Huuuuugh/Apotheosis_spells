@@ -42,6 +42,42 @@ public class ReforgeCache {
 
     public static final String KEY = "iss_reforge";
     public static final String SLOT_AFFIX_DATA = "affix_data";
+    /**
+     * 法术书顶层的并行词缀存储：CompoundTag，键 = 法术槽的稳定 index 字段(字符串)，值 = 该法术的 affix_data。
+     * 存在物品顶层 NBT(不在 ISB_Spells 容器内)，因此 Iron's 用 CODEC 重序列化法术容器时不会抹掉它，
+     * 从根本上解决"增删法术后其他法术词缀丢失/错乱"。
+     */
+    public static final String BOOK_AFFIXES = "apoth_book_affixes";
+
+    /** 读取书顶层并行存储里某 index 的 affix_data；无则 null。 */
+    public static CompoundTag getBookAffix(ItemStack book, int index) {
+        CompoundTag tag = book.getTag();
+        if (tag == null || !tag.contains(BOOK_AFFIXES)) return null;
+        CompoundTag map = tag.getCompound(BOOK_AFFIXES);
+        String k = String.valueOf(index);
+        if (!map.contains(k)) return null;
+        CompoundTag a = map.getCompound(k);
+        return a.isEmpty() ? null : a;
+    }
+
+    /** 写入/清除书顶层并行存储里某 index 的 affix_data（affixData 为空则清除该键，用于索引复用/移除）。 */
+    public static void setBookAffix(ItemStack book, int index, CompoundTag affixData) {
+        if (book.isEmpty()) return;
+        CompoundTag tag = book.getOrCreateTag();
+        CompoundTag map = tag.getCompound(BOOK_AFFIXES);
+        String k = String.valueOf(index);
+        if (affixData == null || affixData.isEmpty()) {
+            map.remove(k);
+        } else {
+            map.put(k, affixData.copy());
+        }
+        tag.put(BOOK_AFFIXES, map);
+        book.setTag(tag);
+    }
+
+    public static void removeBookAffix(ItemStack book, int index) {
+        setBookAffix(book, index, null);
+    }
 
     public record Data(float dmg, float mana, float cd, float cast, int lvl,
                        float radius, float duration, int school) {
@@ -149,15 +185,22 @@ public class ReforgeCache {
 
     public static Data getFromSpellBook(ItemStack book, int spellIndex) {
         if (book.isEmpty() || !(book.getItem() instanceof SpellBook)) return Data.DEF;
+        // 优先：书顶层并行存储（Iron's 重序列化不会抹掉它）。这是新的权威来源。
+        if (spellIndex >= 0) {
+            CompoundTag bookAffix = getBookAffix(book, spellIndex);
+            if (bookAffix != null) {
+                Data d = computeData(bookAffix);
+                if (!d.isDefault()) return d;
+            }
+        }
         if (spellIndex < 0) {
-            // 尝试 fallback：SpellBook 顶层 affix_data
             Data d = fromItemAffixData(book);
             return d != null ? d : Data.DEF;
         }
+        // 兼容旧数据：SpellSlot 子标签 / 物品顶层
         CompoundTag slot = getSlotTag(book, spellIndex);
         Data d = fromSlotAffixData(slot);
         if (d != null) return d;
-        // SpellBook 整体被重铸时，affix 在顶层
         d = fromItemAffixData(book);
         return d != null ? d : Data.DEF;
     }
@@ -188,8 +231,13 @@ public class ReforgeCache {
             if (root == null) return null;
         }
         ListTag data = root.getList("data", 10);
-        if (index < 0 || index >= data.size()) return null;
-        return data.getCompound(index);
+        // 按 SpellSlot 的 index 字段匹配，而非列表下标。移除法术后 "data" 列表会紧凑
+        // （getActiveSpells 只含非空槽），列表下标 != index 字段，按下标读会读错/读不到对应法术的词缀。
+        for (int i = 0; i < data.size(); i++) {
+            CompoundTag slot = data.getCompound(i);
+            if (slot.getInt("index") == index) return slot;
+        }
+        return null;
     }
 
     public static void putSlotTag(ItemStack stack, int index, CompoundTag slotTag) {
@@ -201,9 +249,42 @@ public class ReforgeCache {
             if (root == null) return;
         }
         ListTag data = root.getList("data", 10);
-        if (index < 0 || index >= data.size()) return;
-        data.set(index, slotTag);
-        root.put("data", data);
+        // 同 getSlotTag：按 index 字段定位列表项，而非列表下标。
+        for (int i = 0; i < data.size(); i++) {
+            if (data.getCompound(i).getInt("index") == index) {
+                data.set(i, slotTag);
+                root.put("data", data);
+                return;
+            }
+        }
+    }
+
+    /** 临时诊断：转储法术书的 NBT 布局（顶层 affix_data + 每个槽的 index字段/法术id/词缀子标签）。 */
+    public static void debugDumpBook(ItemStack book, int requested) {
+        try {
+            StringBuilder sb = new StringBuilder("[NBTDUMP] req=").append(requested);
+            CompoundTag top = book.getTagElement(AffixHelper.AFFIX_DATA);
+            sb.append(" topAffix=").append(top != null && !top.isEmpty()
+                ? ("Y,rar=" + top.getString(AffixHelper.RARITY) + ",affixes=" + top.getCompound(AffixHelper.AFFIXES).getAllKeys())
+                : "N");
+            CompoundTag root = book.getTagElement(ISpellContainer.NBT);
+            if (root == null) root = book.getTagElement(ISpellContainer.LEGACY_NBT);
+            if (root != null) {
+                ListTag data = root.getList("data", 10);
+                for (int i = 0; i < data.size(); i++) {
+                    CompoundTag s = data.getCompound(i);
+                    CompoundTag af = s.getCompound(SLOT_AFFIX_DATA);
+                    sb.append(" | pos").append(i)
+                      .append(":idx=").append(s.getInt("index"))
+                      .append(",id=").append(s.getString("id"))
+                      .append(",affix=").append(af.isEmpty() ? "N" : ("Y,rar=" + af.getString(AffixHelper.RARITY)))
+                      .append(",iss=").append(s.getCompound(KEY).isEmpty() ? "N" : "Y");
+                }
+            }
+            ApotheosisSpells.LOGGER.info(sb.toString());
+        } catch (Throwable t) {
+            ApotheosisSpells.LOGGER.warn("[NBTDUMP] failed: {}", t.toString());
+        }
     }
 
     public static Data getFromSlot(CompoundTag slotTag) {

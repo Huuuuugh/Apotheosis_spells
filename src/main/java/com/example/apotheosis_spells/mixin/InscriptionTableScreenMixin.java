@@ -98,22 +98,28 @@ public class InscriptionTableScreenMixin {
     }
 
     /**
-     * 拦截 getUniqueInfo：把 spellLevel boost 后传入
+     * 3.15.6 的 renderLorePage 是直接用 spellSlot.getLevel() 取等级显示（不走 getLevelFor/getLevelComponenet），
+     * 所以等级数字一直是基础值。这里在 renderLorePage 内重定向 SpellSlot.getLevel() 加上 ctx.data().lvl()，
+     * 使 spellLevel 直接成为加成后的值。下方 getManaCost/getEffectiveCastTime/getUniqueInfo 因此不再额外 +lvl。
+     */
+    @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/SpellSlot;getLevel()I"))
+    private int apoth_boostDisplayLevel(SpellSlot slot) {
+        int base = slot.getLevel();
+        var ctx = SpellCastHooks.get();
+        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
+            return base + ctx.data().lvl();
+        }
+        return base;
+    }
+
+    /**
+     * 拦截 getUniqueInfo：spellLevel 已被 apoth_boostDisplayLevel 加成，直接使用即可。
      */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getUniqueInfo(ILnet/minecraft/world/entity/LivingEntity;)Ljava/util/List;"))
     private List<MutableComponent> redirectGetUniqueInfo(AbstractSpell spell, int spellLevel, LivingEntity caster) {
-        var ctx = SpellCastHooks.get();
-        int boostedLevel = spellLevel;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = spellLevel + ctx.data().lvl();
-            ApotheosisSpells.LOGGER.info("{} getUniqueInfo: spell={}, originLevel={}, boosted={}, d.lvl={}",
-                    PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, ctx.data().lvl());
-        } else {
-            ApotheosisSpells.LOGGER.info("{} getUniqueInfo: spell={}, level={}, no d.lvl",
-                    PREFIX, spell.getSpellResource(), spellLevel);
-        }
-        return spell.getUniqueInfo(boostedLevel, caster);
+        return spell.getUniqueInfo(spellLevel, caster);
     }
 
     /**
@@ -123,10 +129,7 @@ public class InscriptionTableScreenMixin {
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"))
     private int redirectGetManaCost(AbstractSpell spell, int level) {
         var ctx = SpellCastHooks.get();
-        int boostedLevel = level;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = level + ctx.data().lvl();
-        }
+        int boostedLevel = level; // spellLevel 已被 apoth_boostDisplayLevel 加成，勿重复 +lvl
         int base = spell.getManaCost(boostedLevel);
         if (ctx == null || ctx.data() == null || ctx.data().mana() == 1f) {
             ApotheosisSpells.LOGGER.info("{} getManaCost: spell={}, originLevel={}, boosted={}, base={}, d.mana=1.0 (no change)",
@@ -165,10 +168,7 @@ public class InscriptionTableScreenMixin {
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
     private int redirectGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
         var ctx = SpellCastHooks.get();
-        int boostedLevel = spellLevel;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = spellLevel + ctx.data().lvl();
-        }
+        int boostedLevel = spellLevel; // spellLevel 已被 apoth_boostDisplayLevel 加成，勿重复 +lvl
         int base = spell.getEffectiveCastTime(boostedLevel, entity);
         if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) {
             ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast=1.0 (no change)",

@@ -189,6 +189,11 @@ public class InscribeMixin {
         // 强制将修改后的 NBT 写入 ItemStack（确保 tag 引用一致）
         bookStack.setTag(bookNbt);
 
+        // 新增（根治）：把刚抄入法术的词缀写到书顶层并行存储，按其 index 键存。
+        // 这是新的权威来源，Iron's 后续重序列化法术容器不会抹掉它。scrollAffixData 为空则清除该键
+        //（索引复用时抄入无词缀法术不会继承旧词缀）。
+        ReforgeCache.setBookAffix(bookStack, selectedIndex, scrollAffixData);
+
         // 关键修复：通知 Slot 数据已变化
         self.getSpellBookSlot().setChanged();
 
@@ -267,57 +272,25 @@ public class InscribeMixin {
         }
 
         var spellList = ISpellContainer.get(bookStack);
-        List<?> activeSpells = spellList.getActiveSpells();
-        if (selectedSpellIndex >= activeSpells.size()) {
-            ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: selectedSpellIndex={} >= activeSpells.size={}, skipping",
-                    selectedSpellIndex, activeSpells.size());
-            return;
-        }
-
-        var spellSlot = (io.redspace.ironsspellbooks.api.spells.SpellSlot) activeSpells.get(selectedSpellIndex);
-        var spellData = spellSlot.spellData();
+        // 关键根因修复：selectedSpellIndex 是“物理槽位下标”——铭刻台界面按 getAllSpells() 的稀疏数组
+        // 位置发送下标，Iron 的 getSpellAtIndex / removeSpellAtIndex 也都按物理下标取/删。
+        // 旧代码用 activeSpells.get(selectedSpellIndex)（压缩后的活动列表位置）：书没有空槽时两者
+        // 巧合相等；一旦书有空槽(gap)，activeSpells.get() 会取错槽位或越界 -> targetIndex 错 ->
+        // getBookAffix 返回 null -> 提前 return -> 结果槽里留下 Iron 每次重建的原版无词缀卷轴 ->
+        // 取出来就是“未重铸”。这就是“拿掉A后取B变回原样 / 末影箭取出来是猩红刺”错乱家族的根因。
+        SpellData spellData = spellList.getSpellAtIndex(selectedSpellIndex);
         if (spellData == null || spellData == SpellData.EMPTY || !spellData.canRemove()) {
-            ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: spellData is null/EMPTY or cannot remove, skipping");
+            ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: physical slot {} empty/cannot-remove, skipping", selectedSpellIndex);
             return;
         }
 
-        int targetIndex = spellSlot.index();
-        ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: selectedSpellIndex={}, activeSpells.size={}, targetIndex={}, spellId={}",
-                selectedSpellIndex, activeSpells.size(), targetIndex, spellData.getSpell().getSpellId());
+        int targetIndex = selectedSpellIndex; // 物理下标：与抄入时 setBookAffix 的键、Iron 的 removeSpellAtIndex 一致
 
-        // 重要：在任何修改之前，保存所有剩余法术的 affix_data
-        // 用于在 resultSlot.onTake 时恢复（SlotOnTakeMixin 处理）
-        List<CompoundTag> remainingAffixData = new ArrayList<>();
-        CompoundTag bookNbt = bookStack.getOrCreateTag();
-        CompoundTag containerNbt = bookNbt.getCompound(ISpellContainer.NBT);
-        ListTag dataList = containerNbt.getList("data", 10);
-
-        // 保存所有剩余法术的 affix_data（排除将被取出的法术）
-        for (int i = 0; i < dataList.size(); i++) {
-            CompoundTag slot = dataList.getCompound(i);
-            if (!slot.isEmpty() && slot.getInt("index") != targetIndex) {
-                CompoundTag affix = slot.getCompound(ReforgeCache.SLOT_AFFIX_DATA);
-                if (affix != null && !affix.isEmpty()) {
-                    remainingAffixData.add(affix.copy());
-                    ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: saved affix_data for slot idx={}", slot.getInt("index"));
-                }
-            }
-        }
-
-        CompoundTag sourceSlotNbt = null;
-        for (int i = 0; i < dataList.size(); i++) {
-            CompoundTag slot = dataList.getCompound(i);
-            if (!slot.isEmpty() && slot.getInt("index") == targetIndex) {
-                sourceSlotNbt = slot;
-                break;
-            }
-        }
-        if (sourceSlotNbt == null) return;
-
-        CompoundTag affixData = sourceSlotNbt.getCompound(ReforgeCache.SLOT_AFFIX_DATA);
+        // 词缀数据从书顶层并行存储读取（权威来源，不会被 Iron's 重序列化抹掉）。
+        // 不再需要"保存剩余法术 + onTake 恢复"那套 —— 其它法术的词缀本就独立存在书顶层，移除一个不影响其余。
+        CompoundTag affixData = ReforgeCache.getBookAffix(bookStack, targetIndex);
         if (affixData == null || affixData.isEmpty()) {
-            ApotheosisSpells.LOGGER.info("[InscribeMixin] afterSetupResultSlot: no affix_data in sourceSlotNbt, targetIndex={}, slotKeys={}",
-                    targetIndex, sourceSlotNbt.getAllKeys());
+            ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: no book-level affix for targetIndex={}", targetIndex);
             return;
         }
 
@@ -378,13 +351,8 @@ public class InscribeMixin {
             self.getResultSlot().set(ItemStack.EMPTY);
             self.getResultSlot().set(newScroll);
 
-            // 6. 通过 SlotOnTakeState 传递状态，在 resultSlot.onTake RETURN 时由 SlotOnTakeMixin 恢复
-            if (!remainingAffixData.isEmpty() && !isRestoringAffixData) {
-                com.example.apotheosis_spells.api.SlotOnTakeState.set(
-                        targetIndex, remainingAffixData, self);
-                ApotheosisSpells.LOGGER.info("[InscribeMixin] setupResultSlot: set state for SlotOnTakeMixin: removedIndex={}, remainingCount={}",
-                        targetIndex, remainingAffixData.size());
-            }
+            // 不再需要 SlotOnTake 的"保存剩余 + onTake 恢复"：其它法术的词缀本就独立存在书顶层并行存储里，
+            // 取出一个法术不影响其余；被取出索引的键会在该索引被新法术抄入时自动覆盖/清除。
 
             ApotheosisSpells.LOGGER.info("[InscribeMixin] afterSetupResultSlot SUCCESS for spell={}, affixCount={}",
                     spellData.getSpell().getSpellId(), affixMap.size());

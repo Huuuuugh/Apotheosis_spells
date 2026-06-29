@@ -10,7 +10,8 @@
         "InscribeMixin",
         "TooltipUtilsMixin",
         "SlotOnTakeMixin",
-        "MagicManagerMixin"
+        "MagicManagerMixin",
+        "SalvagingMenuMixin"
     ],
     "client": [
         "SpellWheelMixin",
