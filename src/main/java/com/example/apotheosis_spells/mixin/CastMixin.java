@@ -102,13 +102,13 @@ public class CastMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
         if (ctx.data().dmg() == 1f && ctx.data().lvl() == 0) return;
         int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
-        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.Context saved = ctx;
         SpellCastHooks.clear();
         try {
             float base = ((AbstractSpell)(Object)this).getSpellPower(boosted, src);
             cir.setReturnValue(ReforgedSpellCalculator.calcModifiedPower(base, ctx.data().dmg()));
         } finally {
-            if (saved != null) SpellCastHooks.set(saved);
+            SpellCastHooks.set(saved);
         }
     }
 
@@ -118,13 +118,13 @@ public class CastMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
         if (ctx.data().mana() == 1f && ctx.data().lvl() == 0) return;
         int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
-        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.Context saved = ctx;
         SpellCastHooks.clear();
         try {
             int base = ((AbstractSpell)(Object)this).getManaCost(boosted);
             cir.setReturnValue(ReforgedSpellCalculator.calcModifiedMana(base, ctx.data().mana()));
         } finally {
-            if (saved != null) SpellCastHooks.set(saved);
+            SpellCastHooks.set(saved);
         }
     }
 
@@ -134,13 +134,13 @@ public class CastMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
         if (ctx.data().cast() == 1f && ctx.data().lvl() == 0) return;
         int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
-        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.Context saved = ctx;
         SpellCastHooks.clear();
         try {
             int base = ((AbstractSpell)(Object)this).getEffectiveCastTime(boosted, entity);
             cir.setReturnValue(ReforgedSpellCalculator.calcModifiedCastTime(base, ctx.data().cast()));
         } finally {
-            if (saved != null) SpellCastHooks.set(saved);
+            SpellCastHooks.set(saved);
         }
     }
 

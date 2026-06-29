@@ -3,14 +3,12 @@ package com.example.apotheosis_spells.mixin;
 import com.example.apotheosis_spells.ApotheosisSpells;
 import com.example.apotheosis_spells.api.ReforgeCache;
 import com.example.apotheosis_spells.api.ReforgedSpellCalculator;
-import com.example.apotheosis_spells.handler.SpellCastHooks;
 import io.redspace.ironsspellbooks.api.magic.SpellSelectionManager;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.gui.overlays.SpellWheelOverlay;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
@@ -23,7 +21,6 @@ import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Mixin(value = SpellWheelOverlay.class, remap = false)
@@ -34,7 +31,6 @@ public class SpellWheelMixin {
 
     @Inject(method = "render", at = @At("HEAD"))
     private void onRenderHead(CallbackInfo ci) {
-        SpellCastHooks.clear();
         SPELL_DATA_MAP.clear();
         Minecraft mc = Minecraft.getInstance();
         Player player = mc.player;
@@ -55,23 +51,11 @@ public class SpellWheelMixin {
                 }
             }
         }
-
-        SpellSelectionManager ssm = new SpellSelectionManager(player);
-        var sel = ssm.getSelection();
-        if (sel != null) {
-            AbstractSpell cachedSpell = sel.spellData.getSpell();
-            if (cachedSpell != null) {
-                ReforgeCache.Data d = SPELL_DATA_MAP.get(cachedSpell.getSpellResource());
-                if (d == null) d = ReforgeCache.Data.DEF;
-                SpellCastHooks.set(new SpellCastHooks.Context(bookStack, player, -1, sel.spellData.getLevel(), d, sel.spellData));
-            }
-        }
     }
 
     @Inject(method = "render", at = @At("RETURN"))
     private void onRenderEnd(CallbackInfo ci) {
         SPELL_DATA_MAP.clear();
-        SpellCastHooks.clear();
     }
 
     @Redirect(method = "render", at = @At(value = "INVOKE",
@@ -117,20 +101,5 @@ public class SpellWheelMixin {
         int result = spell.getLevelFor(level, caster);
         if (d == null || d.lvl() <= 0) return result;
         return result + d.lvl();
-    }
-
-    private int spellSlotIndex(ReforgeCache.Data d) {
-        // 查找 d 在 SPELL_DATA_MAP 中的槽位
-        for (Map.Entry<ResourceLocation, ReforgeCache.Data> entry : SPELL_DATA_MAP.entrySet()) {
-            if (entry.getValue() == d) {
-                // 需要从 player 的 spellbook 解析
-                Player player = Minecraft.getInstance().player;
-                if (player != null) {
-                    return ReforgeCache.resolveSelectedSpellIndex(
-                            io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player), player);
-                }
-            }
-        }
-        return -1;
     }
 }
