@@ -1,0 +1,97 @@
+package com.example.apotheosis_spells.affix;
+
+import com.example.apotheosis_spells.api.ReforgeCache;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import dev.shadowsoffire.apotheosis.adventure.affix.Affix;
+import dev.shadowsoffire.apotheosis.adventure.affix.AffixType;
+import dev.shadowsoffire.apotheosis.adventure.loot.LootCategory;
+import dev.shadowsoffire.apotheosis.adventure.loot.LootRarity;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.util.Mth;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * 法术词条基类。
+ *
+ * 与原 ScrollAffix 区别：
+ *   - 不再用 `id.contains("spell_power")` 字符串匹配，改由每个子类的 contribute 方法给出具体 Data 字段。
+ *   - canApplyTo 默认接受所有 scroll/spellbook_slot 类型。
+ *   - getDescription 使用 key = "modifier.apotheosis_spells.<id>"（子类覆盖 getModifierKey 即可）。
+ */
+public abstract class SpellAffix extends Affix {
+
+    public record Fn(float min, int steps, float step) {
+        public static final Codec<Fn> C = RecordCodecBuilder.create(i -> i.group(
+                Codec.FLOAT.fieldOf("min").forGetter(Fn::min),
+                Codec.INT.fieldOf("steps").forGetter(Fn::steps),
+                Codec.FLOAT.fieldOf("step").forGetter(Fn::step)
+        ).apply(i, Fn::new));
+
+        public int get(float lvl) {
+            return Mth.floor(min + steps * step * lvl);
+        }
+    }
+
+    protected final String mod;
+    protected final Map<String, Fn> vals;
+    protected final Set<String> types;
+
+    protected SpellAffix(String mod, Map<String, Fn> vals, Set<String> types, AffixType type) {
+        super(type);
+        this.mod = mod;
+        this.vals = vals;
+        this.types = types;
+    }
+
+    @Override
+    public AffixType getType() {
+        return AffixType.STAT;
+    }
+
+    public int getBaseValue(LootRarity r, float lvl) {
+        var key = dev.shadowsoffire.apotheosis.adventure.loot.RarityRegistry.INSTANCE.getKey(r).getPath();
+        Fn f = vals.get(key);
+        return f != null ? f.get(lvl) : Mth.floor(lvl);
+    }
+
+    /**
+     * 把 getBaseValue() 的数值转换为 ReforgeCache.Data 的偏移。
+     * 子类必须实现。
+     */
+    public abstract ReforgeCache.Data contribute(int baseValue);
+
+    @Override
+    public boolean canApplyTo(ItemStack stack, LootCategory cat, LootRarity rarity) {
+        return types.contains(cat.getName());
+    }
+
+    @Override
+    public MutableComponent getDescription(ItemStack stack, LootRarity rarity, float level) {
+        int v = getBaseValue(rarity, level);
+        return Component.translatable(getModifierKey(), v);
+    }
+
+    public String getModifierKey() {
+        return "modifier.apotheosis_spells." + mod;
+    }
+
+    @Override
+    public Component getName(boolean prefix) {
+        return Component.translatable("affix.apotheosis_spells." + mod + (prefix ? "" : ".suffix"));
+    }
+
+    @Override
+    public Codec<? extends Affix> getCodec() {
+        return getSelfCodec();
+    }
+
+    /**
+     * 子类需要实现自己的 codec。
+     */
+    protected abstract Codec<? extends SpellAffix> getSelfCodec();
+}

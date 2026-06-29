@@ -1,0 +1,12 @@
+{
+  "type": "apotheosis_spells:spell_level",
+  "modifier": "spell_level",
+  "values": {
+    "common":   {"min": 1, "steps": 1, "step": 1},
+    "uncommon": {"min": 1, "steps": 2, "step": 1},
+    "rare":     {"min": 2, "steps": 2, "step": 1},
+    "epic":     {"min": 2, "steps": 3, "step": 1},
+    "mythic":   {"min": 3, "steps": 2, "step": 1}
+  },
+  "types": ["scroll"]
+}
