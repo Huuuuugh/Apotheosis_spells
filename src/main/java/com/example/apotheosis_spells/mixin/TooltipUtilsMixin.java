@@ -83,11 +83,9 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getSpellPower(spellLevel, source);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getSpellPower(spellLevel, source);
-        }
-        return calc.getSpellPower(spellLevel, (LivingEntity) source);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        float base = spell.getSpellPower(boosted, source);
+        return ReforgedSpellCalculator.calcModifiedPower(base, ctx.data().dmg());
     }
 
     @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
@@ -97,11 +95,9 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getManaCost(level);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getManaCost(level);
-        }
-        return calc.getManaCost(level);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, ctx.data().lvl());
+        int base = spell.getManaCost(boosted);
+        return ReforgedSpellCalculator.calcModifiedMana(base, ctx.data().mana());
     }
 
     @Redirect(method = "formatScrollTooltip", at = @At(value = "INVOKE",
@@ -111,11 +107,9 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getEffectiveCastTime(spellLevel, entity);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getEffectiveCastTime(spellLevel, entity);
-        }
-        return calc.getEffectiveCastTime(spellLevel, entity);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        int base = spell.getEffectiveCastTime(boosted, entity);
+        return ReforgedSpellCalculator.calcModifiedCastTime(base, ctx.data().cast());
     }
 
     // ==================== formatActiveSpellTooltip 重定向 ====================
@@ -127,11 +121,9 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getSpellPower(spellLevel, source);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getSpellPower(spellLevel, source);
-        }
-        return calc.getSpellPower(spellLevel, (LivingEntity) source);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        float base = spell.getSpellPower(boosted, source);
+        return ReforgedSpellCalculator.calcModifiedPower(base, ctx.data().dmg());
     }
 
     @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
@@ -141,11 +133,9 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getManaCost(level);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getManaCost(level);
-        }
-        return calc.getManaCost(level);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, ctx.data().lvl());
+        int base = spell.getManaCost(boosted);
+        return ReforgedSpellCalculator.calcModifiedMana(base, ctx.data().mana());
     }
 
     @Redirect(method = "formatActiveSpellTooltip", at = @At(value = "INVOKE",
@@ -155,10 +145,8 @@ public class TooltipUtilsMixin {
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) {
             return spell.getEffectiveCastTime(spellLevel, entity);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), null);
-        if (calc == null) {
-            return spell.getEffectiveCastTime(spellLevel, entity);
-        }
-        return calc.getEffectiveCastTime(spellLevel, entity);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        int base = spell.getEffectiveCastTime(boosted, entity);
+        return ReforgedSpellCalculator.calcModifiedCastTime(base, ctx.data().cast());
     }
 }

@@ -81,12 +81,9 @@ public class SpellWheelMixin {
         if (d == null || d.isDefault()) {
             return spell.getSpellPower(spellLevel, source);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromSpellSlot(
-                io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(Minecraft.getInstance().player), spellSlotIndex(d));
-        if (calc == null) {
-            return spell.getSpellPower(spellLevel, source);
-        }
-        return calc.getSpellPower(spellLevel, (LivingEntity) source);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, d.lvl());
+        float base = spell.getSpellPower(boosted, source);
+        return ReforgedSpellCalculator.calcModifiedPower(base, d.dmg());
     }
 
     @Redirect(method = "render", at = @At(value = "INVOKE",
@@ -96,12 +93,9 @@ public class SpellWheelMixin {
         if (d == null || d.isDefault()) {
             return spell.getManaCost(level);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromSpellSlot(
-                io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(Minecraft.getInstance().player), spellSlotIndex(d));
-        if (calc == null) {
-            return spell.getManaCost(level);
-        }
-        return calc.getManaCost(level);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, d.lvl());
+        int base = spell.getManaCost(boosted);
+        return ReforgedSpellCalculator.calcModifiedMana(base, d.mana());
     }
 
     @Redirect(method = "render", at = @At(value = "INVOKE",
@@ -111,12 +105,9 @@ public class SpellWheelMixin {
         if (d == null || d.isDefault()) {
             return spell.getEffectiveCastTime(spellLevel, entity);
         }
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromSpellSlot(
-                io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(Minecraft.getInstance().player), spellSlotIndex(d));
-        if (calc == null) {
-            return spell.getEffectiveCastTime(spellLevel, entity);
-        }
-        return calc.getEffectiveCastTime(spellLevel, entity);
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, d.lvl());
+        int base = spell.getEffectiveCastTime(boosted, entity);
+        return ReforgedSpellCalculator.calcModifiedCastTime(base, d.cast());
     }
 
     @Redirect(method = "render", at = @At(value = "INVOKE",

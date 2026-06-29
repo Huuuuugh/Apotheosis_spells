@@ -3,7 +3,6 @@ package com.example.apotheosis_spells.mixin;
 import com.example.apotheosis_spells.api.ReforgeCache;
 import com.example.apotheosis_spells.api.ReforgedSpellCalculator;
 import com.example.apotheosis_spells.handler.SpellCastHooks;
-import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
@@ -101,27 +100,48 @@ public class CastMixin {
     private void onGetSpellPower(int spellLevel, net.minecraft.world.entity.Entity src, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
-        if (calc == null) return;
-        cir.setReturnValue(calc.getSpellPower(spellLevel, ctx.caster()));
+        if (ctx.data().dmg() == 1f && ctx.data().lvl() == 0) return;
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.clear();
+        try {
+            float base = ((AbstractSpell)(Object)this).getSpellPower(boosted, src);
+            cir.setReturnValue(ReforgedSpellCalculator.calcModifiedPower(base, ctx.data().dmg()));
+        } finally {
+            if (saved != null) SpellCastHooks.set(saved);
+        }
     }
 
     @Inject(method = "getManaCost", at = @At("HEAD"), cancellable = true)
     private void onGetManaCost(int spellLevel, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
-        if (calc == null) return;
-        cir.setReturnValue(calc.getManaCost(spellLevel));
+        if (ctx.data().mana() == 1f && ctx.data().lvl() == 0) return;
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.clear();
+        try {
+            int base = ((AbstractSpell)(Object)this).getManaCost(boosted);
+            cir.setReturnValue(ReforgedSpellCalculator.calcModifiedMana(base, ctx.data().mana()));
+        } finally {
+            if (saved != null) SpellCastHooks.set(saved);
+        }
     }
 
     @Inject(method = "getEffectiveCastTime", at = @At("HEAD"), cancellable = true)
     private void onGetEffectiveCastTime(int spellLevel, LivingEntity entity, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
-        ReforgedSpellCalculator calc = ReforgedSpellCalculator.fromStack(ctx.stack(), ctx.caster());
-        if (calc == null) return;
-        cir.setReturnValue(calc.getEffectiveCastTime(spellLevel, entity));
+        if (ctx.data().cast() == 1f && ctx.data().lvl() == 0) return;
+        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, ctx.data().lvl());
+        SpellCastHooks.Context saved = SpellCastHooks.get();
+        SpellCastHooks.clear();
+        try {
+            int base = ((AbstractSpell)(Object)this).getEffectiveCastTime(boosted, entity);
+            cir.setReturnValue(ReforgedSpellCalculator.calcModifiedCastTime(base, ctx.data().cast()));
+        } finally {
+            if (saved != null) SpellCastHooks.set(saved);
+        }
     }
 
     private static ItemStack resolveCastingStack(ItemStack stack, String slot, Player player) {
