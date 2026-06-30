@@ -1,0 +1,13 @@
+{
+  "type": "apotheosis_spells:school_signature",
+  "modifier": "sig_blood",
+  "school": "blood",
+  "values": {
+    "common":   {"min": 8, "steps": 0, "step": 0},
+    "uncommon": {"min": 12, "steps": 0, "step": 0},
+    "rare":     {"min": 16, "steps": 0, "step": 0},
+    "epic":     {"min": 22, "steps": 0, "step": 0},
+    "mythic":   {"min": 30, "steps": 0, "step": 0}
+  },
+  "types": ["scroll"]
+}

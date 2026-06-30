@@ -1,0 +1,13 @@
+{
+  "type": "apotheosis_spells:school_signature",
+  "modifier": "sig_lightning",
+  "school": "lightning",
+  "values": {
+    "common":   {"min": 10, "steps": 0, "step": 0},
+    "uncommon": {"min": 15, "steps": 0, "step": 0},
+    "rare":     {"min": 20, "steps": 0, "step": 0},
+    "epic":     {"min": 25, "steps": 0, "step": 0},
+    "mythic":   {"min": 35, "steps": 0, "step": 0}
+  },
+  "types": ["scroll"]
+}

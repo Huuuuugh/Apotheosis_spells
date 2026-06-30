@@ -11,6 +11,7 @@ import com.example.apotheosis_spells.affix.spell.ManaStealAffix;
 import com.example.apotheosis_spells.affix.spell.OverchargeAffix;
 import com.example.apotheosis_spells.affix.spell.RecastAffix;
 import com.example.apotheosis_spells.affix.spell.SchoolFocusAffix;
+import com.example.apotheosis_spells.affix.spell.SchoolSignatureAffix;
 import com.example.apotheosis_spells.affix.spell.SpellCritAffix;
 import com.example.apotheosis_spells.affix.spell.SpellDurationAffix;
 import com.example.apotheosis_spells.affix.spell.SpellLevelAffix;
@@ -51,5 +52,7 @@ public class RegMixin {
         // 事件类特效词条（第三梯队：生存/功能）
         reg.registerCodec(new ResourceLocation("apotheosis_spells", "ward"), WardAffix.C);
         reg.registerCodec(new ResourceLocation("apotheosis_spells", "swiftness"), SwiftnessAffix.C);
+        // 学派签名词条（9 学派共用此 codec，靠 JSON 的 school 字段区分）
+        reg.registerCodec(new ResourceLocation("apotheosis_spells", "school_signature"), SchoolSignatureAffix.C);
     }
 }

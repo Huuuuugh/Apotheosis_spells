@@ -19,8 +19,10 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -45,6 +47,12 @@ public final class SpellEffectHandler {
     private static final ThreadLocal<Boolean> ECHOING = ThreadLocal.withInitial(() -> false);
     /** 施法疾步的持续时间（tick）。 */
     private static final int HASTE_DURATION = 100;
+    /** 血魔签名：自身生命低于一半时的增伤。 */
+    private static final float BLOOD_BERSERK = 0.15f;
+    /** 塑能签名触发时返还的法力 = 本次法力消耗 × 该比例。 */
+    private static final float EVOCATION_REFUND = 0.5f;
+    /** 末影签名闪现的最大距离（格）。 */
+    private static final double BLINK_DIST = 5.0;
 
     @SubscribeEvent
     public static void onSpellDamage(SpellDamageEvent event) {
@@ -60,6 +68,8 @@ public final class SpellEffectHandler {
 
         float amount = event.getAmount();
         boolean changed = false;
+        LivingEntity target = event.getEntity();
+        int sig = fx.signature();
 
         // 暴击
         if (fx.critChance() > 0 && player.getRandom().nextFloat() < fx.critChance()) {
@@ -67,10 +77,18 @@ public final class SpellEffectHandler {
             changed = true;
         }
         // 斩杀：目标低血时增伤
-        LivingEntity target = event.getEntity();
         if (fx.execute() > 0 && target != null && target.getMaxHealth() > 0
                 && target.getHealth() / target.getMaxHealth() < EXECUTE_THRESHOLD) {
             amount *= (1f + fx.execute());
+            changed = true;
+        }
+        // 学派伤害修正：神圣(圣裁)对不死系增伤、血魔(嗜血狂暴)自身低血增伤
+        if (sig == 4 && target != null && target.getMobType() == MobType.UNDEAD) {
+            amount *= (1f + fx.signatureValue() / 100f);
+            changed = true;
+        }
+        if (sig == 6 && player.getMaxHealth() > 0 && player.getHealth() / player.getMaxHealth() < 0.5f) {
+            amount *= (1f + BLOOD_BERSERK);
             changed = true;
         }
         if (changed) event.setAmount(amount);
@@ -82,6 +100,30 @@ public final class SpellEffectHandler {
         if (fx.manaLeech() > 0) {
             MagicData md = MagicData.getPlayerMagicData(player);
             if (md != null) md.addMana(amount * fx.manaLeech());
+        }
+        // 学派 on-hit 签名效果
+        applyHitSignature(player, target, amount, sig, fx.signatureValue());
+    }
+
+    /** 命中类学派签名效果（火焰/寒冰/闪电/血魔/自然/邪术；神圣的增伤已在 setAmount 前结算）。 */
+    private static void applyHitSignature(Player player, LivingEntity target, float amount, int sig, float v) {
+        if (sig == 0 || target == null) return;
+        switch (sig) {
+            case 1 -> target.setSecondsOnFire((int) v);                                        // 火焰 炽焰：点燃
+            case 2 -> target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, (int) v, 2)); // 寒冰 凛冬：缓慢III
+            case 3 -> {                                                                         // 闪电 雷迟：几率麻痹
+                if (player.getRandom().nextFloat() < v / 100f) {
+                    target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 30, 4));
+                    target.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 30, 1));
+                }
+            }
+            case 6 -> player.heal(amount * v / 100f);                                           // 血魔 嗜血：额外吸血
+            case 8 -> target.addEffect(new MobEffectInstance(MobEffects.POISON, (int) v, 0));   // 自然 剧毒
+            case 9 -> {                                                                         // 邪术 梦魇：失明+虚弱
+                target.addEffect(new MobEffectInstance(MobEffects.BLINDNESS, (int) v, 0));
+                target.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, (int) v, 0));
+            }
+            default -> { }
         }
     }
 
@@ -108,6 +150,14 @@ public final class SpellEffectHandler {
         if (fx.haste() > 0) {
             player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, HASTE_DURATION, fx.haste() - 1, false, true, true));
         }
+        // 学派 on-cast 签名效果：末影(虚空步)闪现 / 塑能(奥能涌动)返还法力
+        int sig = fx.signature();
+        if (sig == 5 && player.getRandom().nextFloat() < fx.signatureValue() / 100f) {
+            apoth_blink(player);
+        } else if (sig == 7 && player.getRandom().nextFloat() < fx.signatureValue() / 100f) {
+            MagicData md = MagicData.getPlayerMagicData(player);
+            if (md != null) md.addMana(event.getManaCost() * EVOCATION_REFUND);
+        }
         // 回响
         if (fx.echo() > 0 && player.getRandom().nextFloat() < fx.echo()) {
             AbstractSpell spell = SpellRegistry.REGISTRY.get().getValue(new ResourceLocation(event.getSpellId()));
@@ -121,6 +171,22 @@ public final class SpellEffectHandler {
                 ApotheosisSpells.LOGGER.debug("[SpellEffectHandler] echo onCast failed: {}", e.toString());
             } finally {
                 ECHOING.set(false);
+            }
+        }
+    }
+
+    /** 末影签名「虚空步」：沿视线水平方向闪现，逐格回退避免卡进方块。 */
+    private static void apoth_blink(Player player) {
+        Vec3 look = player.getLookAngle();
+        Vec3 flat = new Vec3(look.x, 0, look.z);
+        if (flat.lengthSqr() < 1.0e-4) return;
+        flat = flat.normalize();
+        for (double d = BLINK_DIST; d >= 1.0; d -= 1.0) {
+            Vec3 dd = flat.scale(d);
+            if (player.level().noCollision(player, player.getBoundingBox().move(dd.x, 0, dd.z))) {
+                player.teleportTo(player.getX() + dd.x, player.getY(), player.getZ() + dd.z);
+                player.fallDistance = 0;
+                return;
             }
         }
     }
