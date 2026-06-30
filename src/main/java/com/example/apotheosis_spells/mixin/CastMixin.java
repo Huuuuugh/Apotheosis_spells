@@ -106,13 +106,51 @@ public class CastMixin {
     }
 
     /**
+     * attemptInitiateCast RETURN：清理本窗口内为"法力检查 / 施法时间"设置的 ctx，避免泄漏影响
+     * 后续 tick 的其它计算（真正施法的 ctx 由下面 castSpell HEAD 重新解析设置）。
+     */
+    @Inject(method = "attemptInitiateCast", at = @At("RETURN"))
+    private void apoth_attemptInitiateCastReturn(ItemStack stack, int spellLevel, Level level, Player player,
+                                                 CastSource src, boolean triggerCooldown, String slot,
+                                                 CallbackInfoReturnable<Boolean> cir) {
+        SpellCastHooks.clear();
+    }
+
+    /**
+     * castSpell HEAD —— 真正的施法/扣费点。它由 MagicManager.tick 在后续 tick 调用，和 attemptInitiateCast
+     * 不在同一调用栈，所以 attemptInitiateCast 设置的 ThreadLocal ctx 早已失效。这里直接从
+     * MagicData.getPlayerCastingItem() 解析本次施法物品的词缀并设置 ctx，使真正扣法力(getManaCost)与真正
+     * 上冷却(addCooldown→getEffectiveSpellCooldown)时，现有 ctx 门控钩子 apoth_manaCost / MagicManagerMixin
+     * 才会生效。根治"显示打了折、实际不打折"（法力 48 vs 24、冷却不打折）。每次施法恰好应用一次。
+     */
+    @Inject(method = "castSpell", at = @At("HEAD"))
+    private void apoth_castSiteSet(Level world, int spellLevel, ServerPlayer serverPlayer,
+                                  CastSource castSource, boolean triggerCooldown, CallbackInfo ci) {
+        SpellCastHooks.clear();
+        if (serverPlayer == null) return;
+        MagicData md = MagicData.getPlayerMagicData(serverPlayer);
+        ItemStack item = md.getPlayerCastingItem();
+        if (item == null || item.isEmpty()) return;
+        ReforgeCache.Data d;
+        int idx = -1;
+        if (item.getItem() instanceof Scroll) {
+            d = ReforgeCache.getFromScroll(item);
+        } else if (item.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(item)) {
+            idx = resolveCastingPhysicalIndex(item, md, serverPlayer);
+            d = ReforgeCache.getFromSpellBook(item, idx);
+        } else {
+            return;
+        }
+        if (d == null || d.isDefault()) return;
+        SpellCastHooks.set(new SpellCastHooks.Context(item, serverPlayer, idx, spellLevel, d, null));
+    }
+
+    /**
      * castSpell RETURN：清理 ctx
      */
     @Inject(method = "castSpell", at = @At("RETURN"))
     private void onCastSpellReturn(Level world, int spellLevel, ServerPlayer serverPlayer,
                                    CastSource castSource, boolean triggerCooldown, CallbackInfo ci) {
-        ApotheosisSpells.LOGGER.info("{} castSpell RETURN: player={}, spellLevel={}, src={}",
-                PREFIX, serverPlayer.getName().getString(), spellLevel, castSource);
         SpellCastHooks.clear();
     }
 
@@ -140,18 +178,12 @@ public class CastMixin {
         return Math.max(1, spellLevel + d.lvl());
     }
 
-    /** 法术等级 +N：抬高 getLevelFor 返回值，供仍调用 getLevelFor 的<b>显示</b>路径与 mod 兼容（施法不走此路）。 */
-    @Inject(method = "getLevelFor", at = @At("RETURN"), cancellable = true)
-    private void apoth_boostLevel(int level, LivingEntity caster, CallbackInfoReturnable<Integer> cir) {
-        if (!(caster instanceof Player player)) return;
-        // 仅服务端抬高；客户端 tooltip 的等级显示由作者原有的 TooltipUtils 逻辑负责，否则会叠加导致"+N"算两次。
-        if (player.level().isClientSide) return;
-        ReforgeCache.Data d = resolveHeldData(player);
-        if (d == null || d.lvl() == 0) return;
-        cir.setReturnValue(Math.max(1, cir.getReturnValueI() + d.lvl()));
-    }
+    // 注意：不要再钩 getLevelFor 来抬等级。施法路径的调用方 Utils.serverSideInitiateCast 会先调
+    // getLevelFor(stored) 再把结果传给 attemptInitiateCast，若在 getLevelFor 也 +lvl，就会和下面的
+    // apoth_boostCastLevel 叠加成 +2*lvl（实际施法等级翻倍）。等级 boost 只在 apoth_boostCastLevel
+    // 一处进行；显示路径的等级由 TooltipUtils / InscriptionTableScreen / SpellWheel 各自的 mixin 负责。
 
-    /** 法力消耗 ×mana()（ctx 在 attemptInitiateCast→castSpell 窗口内有效）。 */
+    /** 法力消耗 ×mana()（ctx 在 castSpell 窗口内由 apoth_castSiteSet 设置）。 */
     @Inject(method = "getManaCost", at = @At("RETURN"), cancellable = true)
     private void apoth_manaCost(int level, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
@@ -173,6 +205,20 @@ public class CastMixin {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) return;
         cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().cast())));
+    }
+
+    /** 用 MagicData 当前正在施放的法术 id 匹配法术书的物理槽位，得到正确的词缀键（避免硬编码 index 0）。 */
+    private static int resolveCastingPhysicalIndex(ItemStack book, MagicData md, Player player) {
+        try {
+            String castingId = md.getCastingSpellId();
+            if (castingId != null && !castingId.isEmpty()) {
+                for (Object o : ISpellContainer.get(book).getActiveSpells()) {
+                    var ss = (io.redspace.ironsspellbooks.api.spells.SpellSlot) o;
+                    if (String.valueOf(ss.spellData().getSpell().getSpellId()).equals(castingId)) return ss.index();
+                }
+            }
+        } catch (Exception ignored) {}
+        try { return ReforgeCache.resolveSelectedSpellIndex(book, player); } catch (Exception e) { return 0; }
     }
 
     /** 施法入口解析词缀数据：优先按本次施法物品(卷轴/法术书)，否则回退到持握/装备的法术书。 */

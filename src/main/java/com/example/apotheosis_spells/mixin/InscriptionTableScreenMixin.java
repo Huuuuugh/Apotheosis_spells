@@ -143,22 +143,24 @@ public class InscriptionTableScreenMixin {
     }
 
     /**
-     * 拦截 getSpellCooldown：直接应用 d.cd()
+     * 拦截 getSpellCooldown：改走 getEffectiveSpellCooldown，使抄写台冷却与<b>卷轴 tooltip</b> 及<b>真正施法</b>
+     * 完全一致——三者都 = getSpellCooldown × (2-softCap(玩家冷却缩减)) × cd。
+     * 之前这里用裸 getSpellCooldown × cd，漏掉了玩家冷却缩减因子，导致抄写台 5s、tooltip 4s 不一致。
+     * ×cd 由 MagicManagerMixin 在 getEffectiveSpellCooldown RETURN 统一施加一次（本屏已设置 ctx），此处不再乘。
      */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellCooldown()I"))
     private int redirectGetSpellCooldown(AbstractSpell spell) {
+        net.minecraft.client.player.LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
+        if (player != null) {
+            return io.redspace.ironsspellbooks.capabilities.magic.MagicManager.getEffectiveSpellCooldown(
+                    spell, player, io.redspace.ironsspellbooks.api.spells.CastSource.SPELLBOOK);
+        }
+        // 兜底（无玩家）：退回裸 getSpellCooldown × cd
         var ctx = SpellCastHooks.get();
         int base = spell.getSpellCooldown();
-        if (ctx == null || ctx.data() == null || ctx.data().cd() == 1f) {
-            ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd=1.0 (no change)",
-                    PREFIX, spell.getSpellResource(), base);
-            return base;
-        }
-        int result = Math.max(0, Math.round(base * ctx.data().cd()));
-        ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd={}, final={}",
-                PREFIX, spell.getSpellResource(), base, ctx.data().cd(), result);
-        return result;
+        if (ctx != null && ctx.data() != null && ctx.data().cd() != 1f) return Math.max(0, Math.round(base * ctx.data().cd()));
+        return base;
     }
 
     /**
