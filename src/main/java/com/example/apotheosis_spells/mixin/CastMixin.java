@@ -18,6 +18,7 @@ import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.ModifyVariable;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -121,12 +122,29 @@ public class CastMixin {
     // 改为 @Inject(at=RETURN) 直接修改返回值（与 MagicManagerMixin 处理冷却同一套正确写法）。
     // 冷却由 MagicManagerMixin 统一处理，这里不再处理以免双重应用。
 
-    /** 法术等级 +N：抬高 getLevelFor 的返回值，使施法全程（伤害/法力/施法时间…）都按 boosted 等级计算。 */
+    /**
+     * 法术等级 +N（真正生效的入口）：在施法入口 attemptInitiateCast 直接抬高 spellLevel 参数。
+     *
+     * 注意 castSpell/onCast 全程使用传入的 spellLevel，<b>从不调用 getLevelFor</b>（getLevelFor 在
+     * AbstractSpell 内无任何调用者，只服务于显示）。因此只有在这里抬高 spellLevel，伤害(getSpellPower)、
+     * 法力(getManaCost)、施法时间(getEffectiveCastTime)、以及 onCast 里按 spellLevel 直接计算的
+     * 弹射物数量/范围/持续时间等，才会全部按提升后的等级走原版的等级曲线 —— 等同于把卷轴升 N 级。
+     * 与单独的 dmg/mana/cast 倍率词缀是相互独立的两条线。
+     */
+    @ModifyVariable(method = "attemptInitiateCast", at = @At("HEAD"), ordinal = 0, argsOnly = true)
+    private int apoth_boostCastLevel(int spellLevel, ItemStack stack, int spellLevelArg, Level level,
+                                     Player player, CastSource src, boolean triggerCooldown, String slot) {
+        if (level.isClientSide || !(player instanceof ServerPlayer)) return spellLevel;
+        ReforgeCache.Data d = resolveCastData(stack, slot, player);
+        if (d == null || d.lvl() == 0) return spellLevel;
+        return Math.max(1, spellLevel + d.lvl());
+    }
+
+    /** 法术等级 +N：抬高 getLevelFor 返回值，供仍调用 getLevelFor 的<b>显示</b>路径与 mod 兼容（施法不走此路）。 */
     @Inject(method = "getLevelFor", at = @At("RETURN"), cancellable = true)
     private void apoth_boostLevel(int level, LivingEntity caster, CallbackInfoReturnable<Integer> cir) {
         if (!(caster instanceof Player player)) return;
-        // 仅服务端实际施法时抬高等级；客户端 tooltip 的等级显示由作者原有的 TooltipUtils 逻辑负责，
-        // 否则会与其叠加导致"+N"被计算两次。
+        // 仅服务端抬高；客户端 tooltip 的等级显示由作者原有的 TooltipUtils 逻辑负责，否则会叠加导致"+N"算两次。
         if (player.level().isClientSide) return;
         ReforgeCache.Data d = resolveHeldData(player);
         if (d == null || d.lvl() == 0) return;
@@ -155,6 +173,18 @@ public class CastMixin {
         var ctx = SpellCastHooks.get();
         if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) return;
         cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().cast())));
+    }
+
+    /** 施法入口解析词缀数据：优先按本次施法物品(卷轴/法术书)，否则回退到持握/装备的法术书。 */
+    private static ReforgeCache.Data resolveCastData(ItemStack stack, String slot, Player player) {
+        ItemStack cast = resolveCastingStack(stack, slot, player);
+        if (cast != null && !cast.isEmpty()) {
+            if (cast.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(cast);
+            if (cast.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(cast)) {
+                return ReforgeCache.getFromSpellBook(cast, ReforgeCache.resolveSelectedSpellIndex(cast, player));
+            }
+        }
+        return resolveHeldData(player);
     }
 
     /** getLevelFor 在 ctx 设置之前调用，故等级加成从玩家当前持握/装备的卷轴或法术书解析。 */
