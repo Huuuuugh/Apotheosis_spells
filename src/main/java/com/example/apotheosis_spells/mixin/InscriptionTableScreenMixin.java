@@ -1,21 +1,23 @@
 package com.example.apotheosis_spells.mixin;
 
+import com.example.apotheosis_spells.ApotheosisSpells;
 import com.example.apotheosis_spells.api.ReforgeCache;
-import com.example.apotheosis_spells.api.ReforgedSpellCalculator;
+import com.example.apotheosis_spells.handler.SpellCastHooks;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.SpellSlot;
 import io.redspace.ironsspellbooks.gui.inscription_table.InscriptionTableMenu;
 import io.redspace.ironsspellbooks.gui.inscription_table.InscriptionTableScreen;
 import io.redspace.ironsspellbooks.item.SpellBook;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.Unique;
 
 import java.lang.reflect.Field;
 import java.util.List;
@@ -23,95 +25,192 @@ import java.util.List;
 @Mixin(value = InscriptionTableScreen.class, remap = false)
 public class InscriptionTableScreenMixin {
 
+    private static final String PREFIX = "[InscriptionTable]";
     private static final int SPELLBOOK_SLOT = 36 + 0;
-
-    @Unique
-    private ItemStack apotheosis_spells_bookStack = ItemStack.EMPTY;
-
-    @Unique
-    private ReforgeCache.Data apotheosis_spells_data = ReforgeCache.Data.DEF;
-
-    @Unique
-    private int apotheosis_spells_slotIndex = -1;
 
     @Inject(method = "renderLorePage", at = @At("HEAD"))
     private void onRenderLorePageHead(net.minecraft.client.gui.GuiGraphics guiHelper, float partialTick, int mouseX, int mouseY, CallbackInfo ci) {
-        apotheosis_spells_bookStack = ItemStack.EMPTY;
-        apotheosis_spells_data = ReforgeCache.Data.DEF;
-        apotheosis_spells_slotIndex = -1;
-
+        SpellCastHooks.clear();
         try {
             InscriptionTableScreen self = (InscriptionTableScreen) (Object) this;
             InscriptionTableMenu menu = (InscriptionTableMenu) self.getMenu();
 
-            if (Minecraft.getInstance().player == null) return;
+            Player player = Minecraft.getInstance().player;
+            if (player == null) return;
 
             ItemStack bookStack = menu.slots.get(SPELLBOOK_SLOT).getItem();
-            if (bookStack.isEmpty() || !(bookStack.getItem() instanceof SpellBook)) return;
+            if (bookStack.isEmpty() || !(bookStack.getItem() instanceof SpellBook)) {
+                SpellCastHooks.clear();
+                return;
+            }
 
             int selectedIndex = getSelectedSpellIndex(self);
-            if (selectedIndex < 0) return;
+            if (selectedIndex < 0) {
+                SpellCastHooks.clear();
+                return;
+            }
 
             int physicalIndex = getPhysicalIndex(self, selectedIndex);
-            if (physicalIndex < 0) return;
+            if (physicalIndex < 0) {
+                SpellCastHooks.clear();
+                return;
+            }
 
+            ReforgeCache.Data data = ReforgeCache.getFromSpellBook(bookStack, physicalIndex);
             SpellSlot spellSlot = getSpellSlot(self, selectedIndex);
-            if (spellSlot == null) return;
+            if (spellSlot == null) {
+                SpellCastHooks.clear();
+                return;
+            }
 
-            apotheosis_spells_bookStack = bookStack;
-            apotheosis_spells_slotIndex = physicalIndex;
-            apotheosis_spells_data = ReforgeCache.getFromSpellBook(bookStack, physicalIndex);
-        } catch (Exception ignored) {}
+            int spellLevel = spellSlot.getLevel();
+            SpellCastHooks.set(new SpellCastHooks.Context(bookStack, player, physicalIndex, spellLevel, data, spellSlot.spellData()));
+
+            ApotheosisSpells.LOGGER.info("{} renderLorePage ENTER: selectedIndex={}, physicalIndex={}, spellLevel={}, data={}",
+                    PREFIX, selectedIndex, physicalIndex, spellLevel, data);
+
+        } catch (Exception e) {
+            ApotheosisSpells.LOGGER.error("{} Exception: {}", PREFIX, e.getMessage());
+            SpellCastHooks.clear();
+        }
     }
 
     @Inject(method = "renderLorePage", at = @At("RETURN"))
     private void onRenderLorePageReturn(net.minecraft.client.gui.GuiGraphics guiHelper, float partialTick, int mouseX, int mouseY, CallbackInfo ci) {
-        apotheosis_spells_bookStack = ItemStack.EMPTY;
-        apotheosis_spells_data = ReforgeCache.Data.DEF;
-        apotheosis_spells_slotIndex = -1;
+        SpellCastHooks.clear();
     }
 
+    /**
+     * 拦截 getLevelFor：返回 boosted 等级
+     */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"))
-    private float redirectGetSpellPower(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source) {
-        if (apotheosis_spells_data == null || apotheosis_spells_data.isDefault()) {
-            return spell.getSpellPower(spellLevel, source);
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getLevelFor(ILnet/minecraft/world/entity/LivingEntity;)I"))
+    private int redirectGetLevelFor(AbstractSpell spell, int level, LivingEntity caster) {
+        int result = spell.getLevelFor(level, caster);
+        var ctx = SpellCastHooks.get();
+        int boosted = result;
+        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
+            boosted = result + ctx.data().lvl();
+            ApotheosisSpells.LOGGER.info("{} getLevelFor: spell={}, originLevel={}, afterAffinity={}, boosted={}, d.lvl={}",
+                    PREFIX, spell.getSpellResource(), level, result, boosted, ctx.data().lvl());
         }
-        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, apotheosis_spells_data.lvl());
-        float base = spell.getSpellPower(boosted, source);
-        return ReforgedSpellCalculator.calcModifiedPower(base, apotheosis_spells_data.dmg());
+        return boosted;
     }
 
+    /**
+     * 3.15.6 的 renderLorePage 是直接用 spellSlot.getLevel() 取等级显示（不走 getLevelFor/getLevelComponenet），
+     * 所以等级数字一直是基础值。这里在 renderLorePage 内重定向 SpellSlot.getLevel() 加上 ctx.data().lvl()，
+     * 使 spellLevel 直接成为加成后的值。下方 getManaCost/getEffectiveCastTime/getUniqueInfo 因此不再额外 +lvl。
+     */
+    @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/SpellSlot;getLevel()I"))
+    private int apoth_boostDisplayLevel(SpellSlot slot) {
+        int base = slot.getLevel();
+        var ctx = SpellCastHooks.get();
+        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
+            return base + ctx.data().lvl();
+        }
+        return base;
+    }
+
+    /**
+     * 拦截 getUniqueInfo：spellLevel 已被 apoth_boostDisplayLevel 加成，直接使用即可。
+     */
+    @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getUniqueInfo(ILnet/minecraft/world/entity/LivingEntity;)Ljava/util/List;"))
+    private List<MutableComponent> redirectGetUniqueInfo(AbstractSpell spell, int spellLevel, LivingEntity caster) {
+        return spell.getUniqueInfo(spellLevel, caster);
+    }
+
+    /**
+     * 拦截 getManaCost：先把 spellLevel boost，再乘 d.mana()
+     */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"))
     private int redirectGetManaCost(AbstractSpell spell, int level) {
-        if (apotheosis_spells_data == null || apotheosis_spells_data.isDefault()) {
-            return spell.getManaCost(level);
+        var ctx = SpellCastHooks.get();
+        int boostedLevel = level; // spellLevel 已被 apoth_boostDisplayLevel 加成，勿重复 +lvl
+        int base = spell.getManaCost(boostedLevel);
+        if (ctx == null || ctx.data() == null || ctx.data().mana() == 1f) {
+            ApotheosisSpells.LOGGER.info("{} getManaCost: spell={}, originLevel={}, boosted={}, base={}, d.mana=1.0 (no change)",
+                    PREFIX, spell.getSpellResource(), level, boostedLevel, base);
+            return base;
         }
-        int boosted = ReforgedSpellCalculator.calcBoostedLevel(level, apotheosis_spells_data.lvl());
-        int base = spell.getManaCost(boosted);
-        return ReforgedSpellCalculator.calcModifiedMana(base, apotheosis_spells_data.mana());
+        int result = Math.max(0, Math.round(base * ctx.data().mana()));
+        ApotheosisSpells.LOGGER.info("{} getManaCost: spell={}, originLevel={}, boosted={}, base={}, d.mana={}, final={}",
+                PREFIX, spell.getSpellResource(), level, boostedLevel, base, ctx.data().mana(), result);
+        return result;
     }
 
+    /**
+     * 拦截 getSpellCooldown：直接应用 d.cd()
+     */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellCooldown()I"))
     private int redirectGetSpellCooldown(AbstractSpell spell) {
-        if (apotheosis_spells_data == null || apotheosis_spells_data.isDefault()) {
-            return spell.getSpellCooldown();
-        }
+        var ctx = SpellCastHooks.get();
         int base = spell.getSpellCooldown();
-        return ReforgedSpellCalculator.calcModifiedCooldown(base, apotheosis_spells_data.cd());
+        if (ctx == null || ctx.data() == null || ctx.data().cd() == 1f) {
+            ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd=1.0 (no change)",
+                    PREFIX, spell.getSpellResource(), base);
+            return base;
+        }
+        int result = Math.max(0, Math.round(base * ctx.data().cd()));
+        ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd={}, final={}",
+                PREFIX, spell.getSpellResource(), base, ctx.data().cd(), result);
+        return result;
     }
 
+    /**
+     * 拦截 getEffectiveCastTime：先把 spellLevel boost，再应用 d.cast()
+     */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
     private int redirectGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
-        if (apotheosis_spells_data == null || apotheosis_spells_data.isDefault()) {
-            return spell.getEffectiveCastTime(spellLevel, entity);
+        var ctx = SpellCastHooks.get();
+        int boostedLevel = spellLevel; // spellLevel 已被 apoth_boostDisplayLevel 加成，勿重复 +lvl
+        int base = spell.getEffectiveCastTime(boostedLevel, entity);
+        if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) {
+            ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast=1.0 (no change)",
+                    PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base);
+            return base;
         }
-        int boosted = ReforgedSpellCalculator.calcBoostedLevel(spellLevel, apotheosis_spells_data.lvl());
-        int base = spell.getEffectiveCastTime(boosted, entity);
-        return ReforgedSpellCalculator.calcModifiedCastTime(base, apotheosis_spells_data.cast());
+        int result = Math.max(0, Math.round(base * ctx.data().cast()));
+        ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast={}, final={}",
+                PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base, ctx.data().cast(), result);
+        return result;
+    }
+
+    /**
+     * 拦截 getLevelComponenet：显示 boosted 等级带 +/-diff
+     */
+    @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
+            target = "Lio/redspace/ironsspellbooks/util/TooltipsUtils;getLevelComponenet(Lio/redspace/ironsspellbooks/api/spells/SpellData;Lnet/minecraft/world/entity/LivingEntity;)Lnet/minecraft/network/chat/MutableComponent;"))
+    private MutableComponent redirectGetLevelComponenet(io.redspace.ironsspellbooks.api.spells.SpellData spellData, LivingEntity caster) {
+        int stored = spellData.getLevel();
+        int level = spellData.getSpell().getLevelFor(stored, caster);
+        var ctx = SpellCastHooks.get();
+        int diff = 0;
+        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
+            level += ctx.data().lvl();
+            diff = ctx.data().lvl();
+        }
+        int diffFromStored = level - stored;
+        MutableComponent result;
+        if (diffFromStored > 0) {
+            result = net.minecraft.network.chat.Component.literal(level + " (+" + diffFromStored + ")");
+            ApotheosisSpells.LOGGER.info("{} getLevelComponenet: spell={}, stored={}, afterAffinity={}, d.lvl={}, display={}",
+                    PREFIX, spellData.getSpell().getSpellResource(), stored, level - diff, diff, level + " (+" + diffFromStored + ")");
+        } else if (diffFromStored < 0) {
+            result = net.minecraft.network.chat.Component.literal(level + " (" + diffFromStored + ")");
+            ApotheosisSpells.LOGGER.info("{} getLevelComponenet: spell={}, stored={}, afterAffinity={}, d.lvl={}, display={}",
+                    PREFIX, spellData.getSpell().getSpellResource(), stored, level - diff, diff, level + " (" + diffFromStored + ")");
+        } else {
+            result = net.minecraft.network.chat.Component.literal(String.valueOf(level));
+            ApotheosisSpells.LOGGER.info("{} getLevelComponenet: spell={}, stored={}, level={}, no d.lvl",
+                    PREFIX, spellData.getSpell().getSpellResource(), stored, level);
+        }
+        return result;
     }
 
     private static int getSelectedSpellIndex(InscriptionTableScreen screen) {
