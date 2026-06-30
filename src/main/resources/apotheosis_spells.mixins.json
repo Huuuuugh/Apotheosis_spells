@@ -17,7 +17,8 @@
         "SpellRadiusIntMixin",
         "SpellRangeFloatMixin",
         "SpellRangeStaticMixin",
-        "SpellRangeStatic1ArgMixin"
+        "SpellRangeStatic1ArgMixin",
+        "SpellRecastMixin"
     ],
     "client": [
         "SpellWheelMixin",

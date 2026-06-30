@@ -1,0 +1,14 @@
+{
+  "weight": 10,
+  "quality": 0,
+  "dimensions": [],
+  "bonuses": [
+    {
+      "type": "apotheosis:attribute",
+      "gem_class": { "key": "scroll_caster", "types": ["scroll"] },
+      "attribute": "irons_spellbooks:casting_movespeed",
+      "operation": "ADDITION",
+      "values": { "common": 0.10, "uncommon": 0.20, "rare": 0.30, "epic": 0.40, "mythic": 0.50, "ancient": 0.60 }
+    }
+  ]
+}

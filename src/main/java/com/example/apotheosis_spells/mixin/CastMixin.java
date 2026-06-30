@@ -1,6 +1,7 @@
 package com.example.apotheosis_spells.mixin;
 
 import com.example.apotheosis_spells.api.ReforgeCache;
+import com.example.apotheosis_spells.api.SpellEffects;
 import com.example.apotheosis_spells.handler.SpellCastHooks;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
@@ -39,13 +40,32 @@ public class CastMixin {
      * initiateCast 会把它存进 castingSpellLevel，castSpell 全程用它 → 伤害/法力/施法时间/数量/范围等
      * 都按提升后的等级走原版曲线；本方法内的"法力判定"也因此用提升后等级（先涨再减）。
      */
+    /** 超载词条触发时本次施法提升的等级数。 */
+    private static final int APOTH_OVERCHARGE_LEVELS = 1;
+
     @ModifyVariable(method = "attemptInitiateCast", at = @At("HEAD"), ordinal = 0, argsOnly = true)
     private int apoth_boostCastLevel(int spellLevel, ItemStack stack, int spellLevelArg, Level level,
                                      Player player, CastSource src, boolean triggerCooldown, String slot) {
         if (level.isClientSide || !(player instanceof ServerPlayer)) return spellLevel;
         SpellCastHooks.Context ctx = apoth_resolveCastContext(player, spellLevel, stack, slot, null);
-        if (ctx == null || ctx.data().lvl() == 0) return spellLevel;
-        return Math.max(1, spellLevel + ctx.data().lvl());
+        if (ctx == null) return spellLevel;
+        int add = ctx.data().lvl();
+        // 超载：几率本次施法等级 +1。attemptInitiateCast 每次施法触发一次 → 一次施法仅 roll 一次；
+        // 提升后的等级经 castingSpellLevel 贯穿整次施法（伤害/法力/数量等都按提升后等级走，先涨后减）。
+        SpellEffects fx = apoth_effectsForContext(ctx);
+        if (fx.overcharge() > 0 && player.getRandom().nextFloat() < fx.overcharge()) {
+            add += APOTH_OVERCHARGE_LEVELS;
+        }
+        if (add == 0) return spellLevel;
+        return Math.max(1, spellLevel + add);
+    }
+
+    /** 从已解析的施法 ctx 取事件类特效（卷轴/书）。 */
+    private static SpellEffects apoth_effectsForContext(SpellCastHooks.Context ctx) {
+        ItemStack s = ctx.stack();
+        if (s == null || s.isEmpty()) return SpellEffects.NONE;
+        if (s.getItem() instanceof Scroll) return ReforgeCache.getEffectsFromScroll(s);
+        return ReforgeCache.getEffectsFromSpellBook(s, ctx.spellSlotIndex());
     }
 
     /**

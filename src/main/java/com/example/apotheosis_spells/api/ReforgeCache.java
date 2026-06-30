@@ -482,6 +482,54 @@ public class ReforgeCache {
         return new Data(d, m, c, ct, lv, radius, duration, school, schoolBonus);
     }
 
+    // ============================ computeEffects（事件类特效层，不缓存，实时算）============================
+
+    /**
+     * 从 affixData 聚合「事件类特效」（吸血/暴击/斩杀/…）。与 {@link #computeData} 并行、互不影响：
+     * 倍率类走 Data + 各倍率钩子，特效类走 SpellEffects + SpellEffectHandler 的事件。
+     */
+    public static SpellEffects computeEffects(CompoundTag affixData) {
+        if (affixData == null || affixData.isEmpty()) return SpellEffects.NONE;
+        SpellEffects acc = SpellEffects.NONE;
+        LootRarity rarity = resolveRarity(affixData);
+        CompoundTag affixesTag = affixData.getCompound(AffixHelper.AFFIXES);
+        for (String key : affixesTag.getAllKeys()) {
+            DynamicHolder<Affix> holder = AffixRegistry.INSTANCE.holder(new ResourceLocation(key));
+            if (!holder.isBound()) continue;
+            Affix affix = holder.get();
+            if (affix instanceof com.example.apotheosis_spells.affix.SpellAffix sa) {
+                int v = sa.getBaseValue(rarity, affixesTag.getFloat(key));
+                acc = acc.merge(sa.contributeEffect(v));
+            }
+        }
+        return acc;
+    }
+
+    /** 卷轴当前生效的 affixData：SpellSlot0 子标签优先，否则物品顶层（重铸场景）。 */
+    private static CompoundTag scrollAffixData(ItemStack scroll) {
+        if (scroll.isEmpty()) return null;
+        if (ISpellContainer.isSpellContainer(scroll)) {
+            CompoundTag slot = getSlotTag(scroll, 0);
+            if (slot != null) {
+                CompoundTag a = slot.getCompound(SLOT_AFFIX_DATA);
+                if (a != null && !a.isEmpty()) return a;
+            }
+        }
+        return scroll.getTagElement(AffixHelper.AFFIX_DATA);
+    }
+
+    /** 卷轴的事件类特效（实时算）。 */
+    public static SpellEffects getEffectsFromScroll(ItemStack scroll) {
+        if (scroll.isEmpty() || !(scroll.getItem() instanceof Scroll)) return SpellEffects.NONE;
+        return computeEffects(scrollAffixData(scroll));
+    }
+
+    /** 法术书某物理槽的事件类特效（实时算，权威来源 = 书顶层并行存储）。 */
+    public static SpellEffects getEffectsFromSpellBook(ItemStack book, int spellIndex) {
+        if (book.isEmpty() || !(book.getItem() instanceof SpellBook) || spellIndex < 0) return SpellEffects.NONE;
+        return computeEffects(getBookAffix(book, spellIndex));
+    }
+
     public static LootRarity resolveRarity(CompoundTag affixData) {
         try {
             DynamicHolder<LootRarity> holder = AffixHelper.getRarity(affixData);

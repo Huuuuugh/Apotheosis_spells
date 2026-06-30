@@ -1,6 +1,7 @@
 package com.example.apotheosis_spells.affix;
 
 import com.example.apotheosis_spells.api.ReforgeCache;
+import com.example.apotheosis_spells.api.SpellEffects;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import dev.shadowsoffire.apotheosis.adventure.affix.Affix;
@@ -64,6 +65,15 @@ public abstract class SpellAffix extends Affix {
      * 子类必须实现。
      */
     public abstract ReforgeCache.Data contribute(int baseValue);
+
+    /**
+     * 「事件类特效」贡献（吸血/暴击/斩杀/超载/回响/…）。默认无特效；事件类词条子类覆写。
+     * 与 {@link #contribute}（倍率类）并行，由 {@link ReforgeCache#computeEffects} 单独聚合，
+     * 在 {@code handler.SpellEffectHandler} 的事件里结算。
+     */
+    public SpellEffects contributeEffect(int baseValue) {
+        return SpellEffects.NONE;
+    }
 
     @Override
     public boolean canApplyTo(ItemStack stack, LootCategory cat, LootRarity rarity) {

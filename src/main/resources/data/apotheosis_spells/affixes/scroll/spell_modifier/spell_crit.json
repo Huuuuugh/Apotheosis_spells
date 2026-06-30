@@ -1,0 +1,12 @@
+{
+  "type": "apotheosis_spells:spell_crit",
+  "modifier": "spell_crit",
+  "values": {
+    "common":   {"min": 5,  "steps": 1, "step": 5},
+    "uncommon": {"min": 8,  "steps": 1, "step": 4},
+    "rare":     {"min": 10, "steps": 1, "step": 5},
+    "epic":     {"min": 13, "steps": 1, "step": 7},
+    "mythic":   {"min": 18, "steps": 1, "step": 12}
+  },
+  "types": ["scroll"]
+}
