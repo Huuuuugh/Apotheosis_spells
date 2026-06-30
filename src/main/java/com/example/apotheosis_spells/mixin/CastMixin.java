@@ -110,10 +110,13 @@ public class CastMixin {
     }
 
     /** 法术强度（伤害）×dmg()。 */
+    // 法术强度（伤害）×dmg()：不按 castContext 区分。tooltip/抄写台/法术轮盘的“伤害”行是经
+    // getUniqueInfo→getDamage 嵌套调用 getSpellPower 算出的，显示路径的 redirect 拦不到那次嵌套调用，
+    // 必须由本全局钩子统一施加。各显示 mixin 自身的 getSpellPower redirect 已去掉 ×dmg，避免重复。
     @Inject(method = "getSpellPower", at = @At("RETURN"), cancellable = true)
     private void apoth_spellPower(int spellLevel, net.minecraft.world.entity.Entity source, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || !ctx.castContext() || ctx.data() == null || ctx.data().dmg() == 1f) return;
+        if (ctx == null || ctx.data() == null || ctx.data().dmg() == 1f) return;
         cir.setReturnValue(cir.getReturnValueF() * ctx.data().dmg());
     }
 

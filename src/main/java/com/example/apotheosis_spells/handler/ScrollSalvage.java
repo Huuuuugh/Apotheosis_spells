@@ -49,13 +49,14 @@ public final class ScrollSalvage {
         try {
             SpellData sd = ISpellContainer.get(stack).getSpellAtIndex(0);
             SpellRarity sr = sd.getSpell().getRarity(sd.getLevel());
-            if (sr != null) addOut(outs, item("irons_spellbooks", sr.name().toLowerCase(Locale.ROOT) + "_ink"), 1, 2);
+            // 墨水 0–1：一瓶墨水即可制作一张卷轴，回收给 50% 概率返还 1 个墨水（平衡，避免无损循环）。
+            if (sr != null) addOut(outs, item("irons_spellbooks", sr.name().toLowerCase(Locale.ROOT) + "_ink"), 0, 1);
         } catch (Exception ignored) {
             // 卷轴异常/无法术时跳过墨水，保留纸+材料
         }
 
-        // —— 纸 ——
-        addOut(outs, Items.PAPER, 1, 2);
+        // —— 纸 0–1（同墨水，50% 返还 1 张）——
+        addOut(outs, Items.PAPER, 0, 1);
 
         // —— 稀有度材料：按神化稀有度 ——
         DynamicHolder<LootRarity> rarity = AffixHelper.getRarity(stack);

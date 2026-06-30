@@ -1,5 +1,6 @@
 package com.example.apotheosis_spells.mixin;
 
+import com.example.apotheosis_spells.ApotheosisSpells;
 import com.example.apotheosis_spells.handler.SpellCastHooks;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
@@ -17,10 +18,16 @@ public class MagicManagerMixin {
     private static void onGetEffectiveSpellCooldown(AbstractSpell spell, Player player, CastSource castSource, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
         int original = cir.getReturnValue();
-        if (ctx == null || ctx.data() == null || ctx.data().isDefault()) return;
+        if (ctx == null) {
+            ApotheosisSpells.LOGGER.info("[MagicManagerMixin] getEffectiveSpellCooldown: ctx=null, original={}, final={}", original, original);
+            return;
+        }
+        ApotheosisSpells.LOGGER.info("[MagicManagerMixin] getEffectiveSpellCooldown: ctx.data={}, isDefault={}, data.lvl={}, data.cd={}, original={}", ctx.data(), ctx.data().isDefault(), ctx.data().lvl(), ctx.data().cd(), original);
+        if (ctx.data().isDefault()) return;
         if (ctx.data().cd() != 1f) {
             int modified = Math.max(0, Math.round(original * ctx.data().cd()));
             cir.setReturnValue(modified);
+            ApotheosisSpells.LOGGER.info("[MagicManagerMixin] getEffectiveSpellCooldown: APPLIED cd {} -> {} (data.cd={})", original, modified, ctx.data().cd());
         }
     }
 }
