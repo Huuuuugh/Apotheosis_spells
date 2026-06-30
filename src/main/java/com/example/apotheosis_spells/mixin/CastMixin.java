@@ -1,13 +1,11 @@
 package com.example.apotheosis_spells.mixin;
 
-import com.example.apotheosis_spells.ApotheosisSpells;
 import com.example.apotheosis_spells.api.ReforgeCache;
 import com.example.apotheosis_spells.handler.SpellCastHooks;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
 import io.redspace.ironsspellbooks.api.spells.CastSource;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
-import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.item.Scroll;
 import io.redspace.ironsspellbooks.item.SpellBook;
 import net.minecraft.server.level.ServerPlayer;
@@ -19,96 +17,53 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+/**
+ * 让重铸词缀（×法力 / ×冷却 / ×法术强度 / +等级）在 Iron's 的两段式施法里正确生效。
+ *
+ * 施法两段：
+ *   1) attemptInitiateCast（触发那刻）——做"法力是否足够"判定 + 算施法时间 + initiateCast 记录等级；
+ *   2) castSpell（由 MagicManager.tick 在后续 tick 调用）——真正扣法力 / 算伤害 / 上冷却。
+ * 两段不在同一调用栈，所以两段都要各自把 ctx 设好，倍率钩子（getManaCost/getSpellPower/
+ * getEffectiveCastTime RETURN、以及 MagicManagerMixin 的 getEffectiveSpellCooldown）才会生效。
+ *
+ * 词缀来源统一解析（卷轴 / 法术书直接施法 / 法杖等武器施法都覆盖）见 {@link #apoth_resolveCastContext}。
+ */
 @Mixin(value = AbstractSpell.class, remap = false)
 public class CastMixin {
 
-    private static final String PREFIX = "[CastMixin]";
-
     /**
-     * attemptInitiateCast HEAD：设置 ctx
+     * 等级 +N（真正生效的唯一入口）：在 attemptInitiateCast 抬高 spellLevel 参数。
+     * initiateCast 会把它存进 castingSpellLevel，castSpell 全程用它 → 伤害/法力/施法时间/数量/范围等
+     * 都按提升后的等级走原版曲线；本方法内的"法力判定"也因此用提升后等级（先涨再减）。
      */
-    @Inject(method = "attemptInitiateCast", at = @At("HEAD"))
-    private void onAttemptInitiateCastHead(ItemStack stack, int spellLevel, Level level,
-                                          Player player, CastSource src,
-                                          boolean triggerCooldown, String slot,
-                                          CallbackInfoReturnable<Boolean> cir) {
-        SpellCastHooks.clear();
-        if (player == null || !(player instanceof ServerPlayer)) return;
-
-        ApotheosisSpells.LOGGER.info("{} attemptInitiateCast HEAD: player={}, spellLevel={}, src={}, slot={}",
-                PREFIX, player.getName().getString(), spellLevel, src, slot);
-
-        ItemStack castingStack = resolveCastingStack(stack, slot, player);
-        if (castingStack.isEmpty()) {
-            ApotheosisSpells.LOGGER.info("{}   castingStack is empty", PREFIX);
-            return;
-        }
-
-        int spellSlotIndex = -1;
-        ItemStack affixStack = castingStack;
-        if (castingStack.getItem() instanceof SpellBook) {
-            spellSlotIndex = 0;
-            ApotheosisSpells.LOGGER.info("{}   source: SpellBook", PREFIX);
-        } else if (castingStack.getItem() instanceof Scroll) {
-            spellSlotIndex = 0;
-            ApotheosisSpells.LOGGER.info("{}   source: Scroll", PREFIX);
-        } else {
-            ApotheosisSpells.LOGGER.info("{}   source: {}", PREFIX, castingStack.getItem().getClass().getSimpleName());
-            ItemStack spellbook = io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player);
-            if (spellbook == null || spellbook.isEmpty() || !(spellbook.getItem() instanceof SpellBook)) {
-                ItemStack mainHand = player.getMainHandItem();
-                if (mainHand.getItem() instanceof SpellBook) {
-                    spellbook = mainHand;
-                } else {
-                    ItemStack offHand = player.getOffhandItem();
-                    if (offHand.getItem() instanceof SpellBook) {
-                        spellbook = offHand;
-                    }
-                }
-            }
-            if (spellbook != null && !spellbook.isEmpty() && spellbook.getItem() instanceof SpellBook) {
-                affixStack = spellbook;
-                try {
-                    spellSlotIndex = ReforgeCache.resolveSelectedSpellIndex(affixStack, player);
-                } catch (Exception ignored) {}
-            }
-        }
-
-        ReforgeCache.Data d = ReforgeCache.Data.DEF;
-        if (affixStack.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(affixStack)) {
-            d = ReforgeCache.getFromSpellBook(affixStack, spellSlotIndex);
-            if (d.isDefault()) {
-                try {
-                    int selIdx = ReforgeCache.resolveSelectedSpellIndex(affixStack, player);
-                    d = ReforgeCache.getFromSpellBook(affixStack, selIdx);
-                } catch (Exception ignored) {}
-            }
-        } else if (affixStack.getItem() instanceof Scroll) {
-            d = ReforgeCache.getFromScroll(affixStack);
-        }
-
-        ApotheosisSpells.LOGGER.info("{}   affixStack: {}, data={}", PREFIX, affixStack.getItem().getClass().getSimpleName(), d);
-
-        if (d == null) return;
-
-        SpellData castingSpellData = null;
-        if (ISpellContainer.isSpellContainer(affixStack)) {
-            castingSpellData = ISpellContainer.get(affixStack).getSpellAtIndex(0);
-        }
-        SpellCastHooks.set(new SpellCastHooks.Context(affixStack, player, spellSlotIndex, spellLevel, d, castingSpellData));
-
-        ApotheosisSpells.LOGGER.info("{}   ctx set: spellSlotIndex={}, spellLevel={}, data=lvl={}, dmg={}, mana={}, cd={}, cast={}",
-                PREFIX, spellSlotIndex, spellLevel, d.lvl(), d.dmg(), d.mana(), d.cd(), d.cast());
+    @ModifyVariable(method = "attemptInitiateCast", at = @At("HEAD"), ordinal = 0, argsOnly = true)
+    private int apoth_boostCastLevel(int spellLevel, ItemStack stack, int spellLevelArg, Level level,
+                                     Player player, CastSource src, boolean triggerCooldown, String slot) {
+        if (level.isClientSide || !(player instanceof ServerPlayer)) return spellLevel;
+        SpellCastHooks.Context ctx = apoth_resolveCastContext(player, spellLevel, stack, slot, null);
+        if (ctx == null || ctx.data().lvl() == 0) return spellLevel;
+        return Math.max(1, spellLevel + ctx.data().lvl());
     }
 
     /**
-     * attemptInitiateCast RETURN：清理本窗口内为"法力检查 / 施法时间"设置的 ctx，避免泄漏影响
-     * 后续 tick 的其它计算（真正施法的 ctx 由下面 castSpell HEAD 重新解析设置）。
+     * attemptInitiateCast HEAD：设置 ctx，供本方法内的"法力是否足够"判定(canBeCastedBy→getManaCost)
+     * 与施法时间(getEffectiveCastTime)应用 ×mana / ×cast —— 修复"减了消耗却没减判定"。
+     * 此时 MagicData 尚未记录施法法术，按当前选中法术的槽位解析。
      */
+    @Inject(method = "attemptInitiateCast", at = @At("HEAD"))
+    private void onAttemptInitiateCastHead(ItemStack stack, int spellLevel, Level level, Player player,
+                                           CastSource src, boolean triggerCooldown, String slot,
+                                           CallbackInfoReturnable<Boolean> cir) {
+        SpellCastHooks.clear();
+        if (!(player instanceof ServerPlayer)) return;
+        SpellCastHooks.Context ctx = apoth_resolveCastContext(player, spellLevel, stack, slot, null);
+        if (ctx != null) SpellCastHooks.set(ctx);
+    }
+
+    /** attemptInitiateCast RETURN：清理本窗口 ctx，避免泄漏到后续 tick（真正施法的 ctx 由 castSpell HEAD 设）。 */
     @Inject(method = "attemptInitiateCast", at = @At("RETURN"))
     private void apoth_attemptInitiateCastReturn(ItemStack stack, int spellLevel, Level level, Player player,
                                                  CastSource src, boolean triggerCooldown, String slot,
@@ -117,11 +72,9 @@ public class CastMixin {
     }
 
     /**
-     * castSpell HEAD —— 真正的施法/扣费点。它由 MagicManager.tick 在后续 tick 调用，和 attemptInitiateCast
-     * 不在同一调用栈，所以 attemptInitiateCast 设置的 ThreadLocal ctx 早已失效。这里直接从
-     * MagicData.getPlayerCastingItem() 解析本次施法物品的词缀并设置 ctx，使真正扣法力(getManaCost)与真正
-     * 上冷却(addCooldown→getEffectiveSpellCooldown)时，现有 ctx 门控钩子 apoth_manaCost / MagicManagerMixin
-     * 才会生效。根治"显示打了折、实际不打折"（法力 48 vs 24、冷却不打折）。每次施法恰好应用一次。
+     * castSpell HEAD —— 真正的施法/扣费点（后续 tick 调用，与 attemptInitiateCast 不同栈）。
+     * 重新解析并设置 ctx，使真正扣法力(getManaCost)、上冷却(getEffectiveSpellCooldown)、算伤害(getSpellPower)
+     * 时倍率钩子生效，每次施法恰好一次。注意延迟施法时 getPlayerCastingItem 常已为空，统一解析里会回退。
      */
     @Inject(method = "castSpell", at = @At("HEAD"))
     private void apoth_castSiteSet(Level world, int spellLevel, ServerPlayer serverPlayer,
@@ -129,70 +82,30 @@ public class CastMixin {
         SpellCastHooks.clear();
         if (serverPlayer == null) return;
         MagicData md = MagicData.getPlayerMagicData(serverPlayer);
-        ItemStack item = md.getPlayerCastingItem();
-        // 关键：延迟施法（后续 tick 的 castSpell）时 getPlayerCastingItem 常已被清空（返回 AirItem），
-        // 必须回退到施法装备槽（getCastingEquipmentSlot，例如 spellbook/mainhand）解析法术书/卷轴。
-        if (item == null || item.isEmpty()) {
-            item = resolveCastingStack(ItemStack.EMPTY, md.getCastingEquipmentSlot(), serverPlayer);
-        }
-        if (item == null || item.isEmpty()) return;
-        ReforgeCache.Data d;
-        int idx = -1;
-        if (item.getItem() instanceof Scroll) {
-            d = ReforgeCache.getFromScroll(item);
-        } else if (item.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(item)) {
-            idx = resolveCastingPhysicalIndex(item, md, serverPlayer);
-            d = ReforgeCache.getFromSpellBook(item, idx);
-        } else {
-            return;
-        }
-        if (d == null || d.isDefault()) return;
-        SpellCastHooks.set(new SpellCastHooks.Context(item, serverPlayer, idx, spellLevel, d, null));
+        SpellCastHooks.Context ctx = apoth_resolveCastContext(
+                serverPlayer, spellLevel, md.getPlayerCastingItem(), md.getCastingEquipmentSlot(), md.getCastingSpellId());
+        if (ctx != null) SpellCastHooks.set(ctx);
     }
 
-    /**
-     * castSpell RETURN：清理 ctx
-     */
+    /** castSpell RETURN：清理 ctx。 */
     @Inject(method = "castSpell", at = @At("RETURN"))
     private void onCastSpellReturn(Level world, int spellLevel, ServerPlayer serverPlayer,
                                    CastSource castSource, boolean triggerCooldown, CallbackInfo ci) {
         SpellCastHooks.clear();
     }
 
-    // ===== Apothic Spells 修复 =====
-    // 原作者用 @Redirect(method="getX", target="getX") 是自引用注入：在 getX 方法体里找对 getX 的调用，
-    // 但这些方法不调用自己 → 注入 0 次、从不触发 → 法力/法强/施法时间/等级加成"显示有但不生效"。
-    // 改为 @Inject(at=RETURN) 直接修改返回值（与 MagicManagerMixin 处理冷却同一套正确写法）。
-    // 冷却由 MagicManagerMixin 统一处理，这里不再处理以免双重应用。
+    // ===== 倍率钩子（均以 SpellCastHooks ctx 门控；ctx 由上面三处在对应阶段设置）=====
+    // 原作者用 @Redirect(self) 自引用注入从不触发；改为 @Inject(RETURN) 直接改返回值。
+    // 冷却由 MagicManagerMixin 在 getEffectiveSpellCooldown 一处统一施加，这里不处理以免双重应用。
 
-    /**
-     * 法术等级 +N（真正生效的入口）：在施法入口 attemptInitiateCast 直接抬高 spellLevel 参数。
-     *
-     * 注意 castSpell/onCast 全程使用传入的 spellLevel，<b>从不调用 getLevelFor</b>（getLevelFor 在
-     * AbstractSpell 内无任何调用者，只服务于显示）。因此只有在这里抬高 spellLevel，伤害(getSpellPower)、
-     * 法力(getManaCost)、施法时间(getEffectiveCastTime)、以及 onCast 里按 spellLevel 直接计算的
-     * 弹射物数量/范围/持续时间等，才会全部按提升后的等级走原版的等级曲线 —— 等同于把卷轴升 N 级。
-     * 与单独的 dmg/mana/cast 倍率词缀是相互独立的两条线。
-     */
-    @ModifyVariable(method = "attemptInitiateCast", at = @At("HEAD"), ordinal = 0, argsOnly = true)
-    private int apoth_boostCastLevel(int spellLevel, ItemStack stack, int spellLevelArg, Level level,
-                                     Player player, CastSource src, boolean triggerCooldown, String slot) {
-        if (level.isClientSide || !(player instanceof ServerPlayer)) return spellLevel;
-        ReforgeCache.Data d = resolveCastData(stack, slot, player);
-        if (d == null || d.lvl() == 0) return spellLevel;
-        return Math.max(1, spellLevel + d.lvl());
-    }
+    // 仅在"真正施法"(castContext=true)时施加倍率；显示路径的倍率由各显示 mixin 自身的 redirect 施加，
+    // 全局钩子在显示时不重复应用，保证每条路径上倍率只计一次（口径一致）。
 
-    // 注意：不要再钩 getLevelFor 来抬等级。施法路径的调用方 Utils.serverSideInitiateCast 会先调
-    // getLevelFor(stored) 再把结果传给 attemptInitiateCast，若在 getLevelFor 也 +lvl，就会和下面的
-    // apoth_boostCastLevel 叠加成 +2*lvl（实际施法等级翻倍）。等级 boost 只在 apoth_boostCastLevel
-    // 一处进行；显示路径的等级由 TooltipUtils / InscriptionTableScreen / SpellWheel 各自的 mixin 负责。
-
-    /** 法力消耗 ×mana()（ctx 在 castSpell 窗口内由 apoth_castSiteSet 设置）。 */
+    /** 法力消耗 ×mana()。 */
     @Inject(method = "getManaCost", at = @At("RETURN"), cancellable = true)
     private void apoth_manaCost(int level, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().mana() == 1f) return;
+        if (ctx == null || !ctx.castContext() || ctx.data() == null || ctx.data().mana() == 1f) return;
         cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().mana())));
     }
 
@@ -200,7 +113,7 @@ public class CastMixin {
     @Inject(method = "getSpellPower", at = @At("RETURN"), cancellable = true)
     private void apoth_spellPower(int spellLevel, net.minecraft.world.entity.Entity source, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().dmg() == 1f) return;
+        if (ctx == null || !ctx.castContext() || ctx.data() == null || ctx.data().dmg() == 1f) return;
         cir.setReturnValue(cir.getReturnValueF() * ctx.data().dmg());
     }
 
@@ -208,52 +121,64 @@ public class CastMixin {
     @Inject(method = "getEffectiveCastTime", at = @At("RETURN"), cancellable = true)
     private void apoth_castTime(int spellLevel, LivingEntity entity, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) return;
+        if (ctx == null || !ctx.castContext() || ctx.data() == null || ctx.data().cast() == 1f) return;
         cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().cast())));
     }
 
-    /** 用 MagicData 当前正在施放的法术 id 匹配法术书的物理槽位，得到正确的词缀键（避免硬编码 index 0）。 */
-    private static int resolveCastingPhysicalIndex(ItemStack book, MagicData md, Player player) {
+    // ===== 统一解析 =====
+
+    /**
+     * 统一解析"本次施法应取词缀的来源"，返回可直接用的 ctx（无重铸返回 null）。覆盖：
+     *   - 卷轴施法：词缀来自卷轴本身；
+     *   - 法术书直接施法 / 法杖等武器施法：词缀来自玩家装备(Curios)或主/副手的法术书里被施放的那条法术。
+     * castingSpellId 非空（castSpell 阶段）→ 按法术 id 精确匹配物理槽位；为空（attemptInitiateCast 阶段，
+     * 此时尚未记录施法法术）→ 用当前选中法术的槽位。
+     */
+    private static SpellCastHooks.Context apoth_resolveCastContext(Player player, int spellLevel,
+                                                                  ItemStack castStack, String slot, String castingSpellId) {
+        ItemStack cast = (castStack != null && !castStack.isEmpty())
+                ? castStack : resolveCastingStack(ItemStack.EMPTY, slot, player);
+        if (cast != null && !cast.isEmpty() && cast.getItem() instanceof Scroll) {
+            ReforgeCache.Data sd = ReforgeCache.getFromScroll(cast);
+            return (sd == null || sd.isDefault()) ? null
+                    : new SpellCastHooks.Context(cast, player, 0, spellLevel, sd, null, true);
+        }
+        ItemStack book = resolveCastingSpellBook(cast, player);
+        if (book == null || book.isEmpty()) return null;
+        int idx = (castingSpellId != null && !castingSpellId.isEmpty())
+                ? apoth_indexBySpellId(book, castingSpellId, player)
+                : ReforgeCache.resolveSelectedSpellIndex(book, player);
+        ReforgeCache.Data d = ReforgeCache.getFromSpellBook(book, idx);
+        return (d == null || d.isDefault()) ? null
+                : new SpellCastHooks.Context(book, player, idx, spellLevel, d, null, true);
+    }
+
+    /** 用施放法术 id 匹配法术书物理槽位；匹配不到时回退选中槽位。 */
+    private static int apoth_indexBySpellId(ItemStack book, String castingSpellId, Player player) {
         try {
-            String castingId = md.getCastingSpellId();
-            if (castingId != null && !castingId.isEmpty()) {
-                for (Object o : ISpellContainer.get(book).getActiveSpells()) {
-                    var ss = (io.redspace.ironsspellbooks.api.spells.SpellSlot) o;
-                    if (String.valueOf(ss.spellData().getSpell().getSpellId()).equals(castingId)) return ss.index();
-                }
+            for (Object o : ISpellContainer.get(book).getActiveSpells()) {
+                var ss = (io.redspace.ironsspellbooks.api.spells.SpellSlot) o;
+                if (String.valueOf(ss.spellData().getSpell().getSpellId()).equals(castingSpellId)) return ss.index();
             }
         } catch (Exception ignored) {}
         try { return ReforgeCache.resolveSelectedSpellIndex(book, player); } catch (Exception e) { return 0; }
     }
 
-    /** 施法入口解析词缀数据：优先按本次施法物品(卷轴/法术书)，否则回退到持握/装备的法术书。 */
-    private static ReforgeCache.Data resolveCastData(ItemStack stack, String slot, Player player) {
-        ItemStack cast = resolveCastingStack(stack, slot, player);
-        if (cast != null && !cast.isEmpty()) {
-            if (cast.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(cast);
-            if (cast.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(cast)) {
-                return ReforgeCache.getFromSpellBook(cast, ReforgeCache.resolveSelectedSpellIndex(cast, player));
-            }
-        }
-        return resolveHeldData(player);
-    }
-
-    /** getLevelFor 在 ctx 设置之前调用，故等级加成从玩家当前持握/装备的卷轴或法术书解析。 */
-    private static ReforgeCache.Data resolveHeldData(Player player) {
-        ItemStack main = player.getMainHandItem();
-        if (main.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(main);
-        ItemStack off = player.getOffhandItem();
-        if (off.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(off);
+    /** 本次施法取词缀的法术书：施法物品本身是书→用它；否则用玩家装备(Curios)/主手/副手的法术书。 */
+    private static ItemStack resolveCastingSpellBook(ItemStack castItem, Player player) {
+        if (castItem != null && castItem.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(castItem)) return castItem;
         ItemStack book = io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player);
-        if (book != null && !book.isEmpty() && book.getItem() instanceof SpellBook) {
-            return ReforgeCache.getFromSpellBook(book, ReforgeCache.resolveSelectedSpellIndex(book, player));
-        }
-        return null;
+        if (book != null && !book.isEmpty() && book.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(book)) return book;
+        ItemStack mh = player.getMainHandItem();
+        if (mh.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(mh)) return mh;
+        ItemStack oh = player.getOffhandItem();
+        if (oh.getItem() instanceof SpellBook && ISpellContainer.isSpellContainer(oh)) return oh;
+        return ItemStack.EMPTY;
     }
 
+    /** 从施法物品参数或施法装备槽解析出施法物品本体。 */
     private static ItemStack resolveCastingStack(ItemStack stack, String slot, Player player) {
-        ItemStack castingStack = stack;
-        if (castingStack != null && !castingStack.isEmpty()) return castingStack;
+        if (stack != null && !stack.isEmpty()) return stack;
         if (slot == null) return ItemStack.EMPTY;
         if (slot.equals(io.redspace.ironsspellbooks.compat.Curios.SPELLBOOK_SLOT)) {
             return io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player);

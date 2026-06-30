@@ -28,7 +28,19 @@ import net.minecraft.world.item.ItemStack;
  */
 public class SpellCastHooks {
 
-    public record Context(ItemStack stack, Player caster, int spellSlotIndex, int spellLevel, ReforgeCache.Data data, SpellData spellData) {
+    public record Context(ItemStack stack, Player caster, int spellSlotIndex, int spellLevel, ReforgeCache.Data data, SpellData spellData, boolean castContext) {
+        /**
+         * 兼容旧调用（显示路径）：castContext 默认 false。
+         *
+         * <p>castContext 区分"真正施法"与"显示"两种 ctx。CastMixin 的全局倍率钩子
+         * （apoth_manaCost/apoth_spellPower/apoth_castTime，注入 getManaCost/getSpellPower/
+         * getEffectiveCastTime 的 RETURN）只在 castContext=true 时施加倍率。显示路径
+         * （TooltipUtils / InscriptionTableScreen / SpellWheel）各自的 redirect 已经施加过一次倍率，
+         * 故建此 Context 时 castContext=false，让倍率在每条路径上各只施加一次（口径一致）。
+         */
+        public Context(ItemStack stack, Player caster, int spellSlotIndex, int spellLevel, ReforgeCache.Data data, SpellData spellData) {
+            this(stack, caster, spellSlotIndex, spellLevel, data, spellData, false);
+        }
     }
 
     private static final ThreadLocal<Context> CURRENT = new ThreadLocal<>();
