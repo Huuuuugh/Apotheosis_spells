@@ -115,92 +115,59 @@ public class CastMixin {
         SpellCastHooks.clear();
     }
 
-    /**
-     * 拦截 getSpellPower：使用 boosted 等级计算，再乘 d.dmg()
-     */
-    @Redirect(method = "getSpellPower", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellPower(ILnet/minecraft/world/entity/Entity;)F"))
-    private float redirectGetSpellPower(AbstractSpell spell, int spellLevel, net.minecraft.world.entity.Entity source) {
-        var ctx = SpellCastHooks.get();
-        int boostedLevel = spellLevel;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = spellLevel + ctx.data().lvl();
-        }
-        float base = spell.getSpellPower(boostedLevel, source);
-        if (ctx == null || ctx.data() == null || ctx.data().dmg() == 1f) {
-            ApotheosisSpells.LOGGER.info("{} getSpellPower: spell={}, originLevel={}, boosted={}, base={}, d.dmg=1.0 (no change)",
-                    PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base);
-            return base;
-        }
-        float result = base * ctx.data().dmg();
-        ApotheosisSpells.LOGGER.info("{} getSpellPower: spell={}, originLevel={}, boosted={}, base={}, d.dmg={}, final={}",
-                PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base, ctx.data().dmg(), result);
-        return result;
+    // ===== Apothic Spells 修复 =====
+    // 原作者用 @Redirect(method="getX", target="getX") 是自引用注入：在 getX 方法体里找对 getX 的调用，
+    // 但这些方法不调用自己 → 注入 0 次、从不触发 → 法力/法强/施法时间/等级加成"显示有但不生效"。
+    // 改为 @Inject(at=RETURN) 直接修改返回值（与 MagicManagerMixin 处理冷却同一套正确写法）。
+    // 冷却由 MagicManagerMixin 统一处理，这里不再处理以免双重应用。
+
+    /** 法术等级 +N：抬高 getLevelFor 的返回值，使施法全程（伤害/法力/施法时间…）都按 boosted 等级计算。 */
+    @Inject(method = "getLevelFor", at = @At("RETURN"), cancellable = true)
+    private void apoth_boostLevel(int level, LivingEntity caster, CallbackInfoReturnable<Integer> cir) {
+        if (!(caster instanceof Player player)) return;
+        // 仅服务端实际施法时抬高等级；客户端 tooltip 的等级显示由作者原有的 TooltipUtils 逻辑负责，
+        // 否则会与其叠加导致"+N"被计算两次。
+        if (player.level().isClientSide) return;
+        ReforgeCache.Data d = resolveHeldData(player);
+        if (d == null || d.lvl() == 0) return;
+        cir.setReturnValue(Math.max(1, cir.getReturnValueI() + d.lvl()));
     }
 
-    /**
-     * 拦截 getManaCost：使用 boosted 等级计算，再乘 d.mana()
-     */
-    @Redirect(method = "getManaCost", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getManaCost(I)I"))
-    private int redirectGetManaCost(AbstractSpell spell, int level) {
+    /** 法力消耗 ×mana()（ctx 在 attemptInitiateCast→castSpell 窗口内有效）。 */
+    @Inject(method = "getManaCost", at = @At("RETURN"), cancellable = true)
+    private void apoth_manaCost(int level, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
-        int boostedLevel = level;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = level + ctx.data().lvl();
-        }
-        int base = spell.getManaCost(boostedLevel);
-        if (ctx == null || ctx.data() == null || ctx.data().mana() == 1f) {
-            ApotheosisSpells.LOGGER.info("{} getManaCost: spell={}, originLevel={}, boosted={}, base={}, d.mana=1.0 (no change)",
-                    PREFIX, spell.getSpellResource(), level, boostedLevel, base);
-            return base;
-        }
-        int result = Math.max(0, Math.round(base * ctx.data().mana()));
-        ApotheosisSpells.LOGGER.info("{} getManaCost: spell={}, originLevel={}, boosted={}, base={}, d.mana={}, final={}",
-                PREFIX, spell.getSpellResource(), level, boostedLevel, base, ctx.data().mana(), result);
-        return result;
+        if (ctx == null || ctx.data() == null || ctx.data().mana() == 1f) return;
+        cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().mana())));
     }
 
-    /**
-     * 拦截 getEffectiveCastTime：使用 boosted 等级计算，再应用 d.cast()
-     */
-    @Redirect(method = "getEffectiveCastTime", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getEffectiveCastTime(ILnet/minecraft/world/entity/LivingEntity;)I"))
-    private int redirectGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
+    /** 法术强度（伤害）×dmg()。 */
+    @Inject(method = "getSpellPower", at = @At("RETURN"), cancellable = true)
+    private void apoth_spellPower(int spellLevel, net.minecraft.world.entity.Entity source, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
-        int boostedLevel = spellLevel;
-        if (ctx != null && ctx.data() != null && ctx.data().lvl() > 0) {
-            boostedLevel = spellLevel + ctx.data().lvl();
-        }
-        int base = spell.getEffectiveCastTime(boostedLevel, entity);
-        if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) {
-            ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast=1.0 (no change)",
-                    PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base);
-            return base;
-        }
-        int result = Math.max(0, Math.round(base * ctx.data().cast()));
-        ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast={}, final={}",
-                PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base, ctx.data().cast(), result);
-        return result;
+        if (ctx == null || ctx.data() == null || ctx.data().dmg() == 1f) return;
+        cir.setReturnValue(cir.getReturnValueF() * ctx.data().dmg());
     }
 
-    /**
-     * 拦截 getSpellCooldown：直接应用 d.cd()
-     */
-    @Redirect(method = "getSpellCooldown", at = @At(value = "INVOKE",
-            target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getSpellCooldown()I"))
-    private int redirectGetSpellCooldown(AbstractSpell spell) {
+    /** 施法时间 ×cast()。 */
+    @Inject(method = "getEffectiveCastTime", at = @At("RETURN"), cancellable = true)
+    private void apoth_castTime(int spellLevel, LivingEntity entity, CallbackInfoReturnable<Integer> cir) {
         var ctx = SpellCastHooks.get();
-        int base = spell.getSpellCooldown();
-        if (ctx == null || ctx.data() == null || ctx.data().cd() == 1f) {
-            ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd=1.0 (no change)",
-                    PREFIX, spell.getSpellResource(), base);
-            return base;
+        if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) return;
+        cir.setReturnValue(Math.max(0, Math.round(cir.getReturnValueI() * ctx.data().cast())));
+    }
+
+    /** getLevelFor 在 ctx 设置之前调用，故等级加成从玩家当前持握/装备的卷轴或法术书解析。 */
+    private static ReforgeCache.Data resolveHeldData(Player player) {
+        ItemStack main = player.getMainHandItem();
+        if (main.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(main);
+        ItemStack off = player.getOffhandItem();
+        if (off.getItem() instanceof Scroll) return ReforgeCache.getFromScroll(off);
+        ItemStack book = io.redspace.ironsspellbooks.api.util.Utils.getPlayerSpellbookStack(player);
+        if (book != null && !book.isEmpty() && book.getItem() instanceof SpellBook) {
+            return ReforgeCache.getFromSpellBook(book, ReforgeCache.resolveSelectedSpellIndex(book, player));
         }
-        int result = Math.max(0, Math.round(base * ctx.data().cd()));
-        ApotheosisSpells.LOGGER.info("{} getSpellCooldown: spell={}, base={}, d.cd={}, final={}",
-                PREFIX, spell.getSpellResource(), base, ctx.data().cd(), result);
-        return result;
+        return null;
     }
 
     private static ItemStack resolveCastingStack(ItemStack stack, String slot, Player player) {
