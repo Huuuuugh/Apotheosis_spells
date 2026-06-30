@@ -94,6 +94,51 @@ public class CastMixin {
         SpellCastHooks.clear();
     }
 
+    // ===== 扩展 ctx 窗口：DoT/通道类法术(onServerCastTick)与墙/延迟实体类(onRecastFinished)的伤害 =====
+    // 这两个回调由 MagicManager.tick 在 castSpell 窗口之外调用，其中现算的 getSpellPower 之前吃不到 ×dmg。
+    // 在这两处也按同一来源解析并设置 ctx(castContext=true)，使虹吸射线/陨星/烈焰风暴/火墙等的伤害也生效。
+
+    /** onServerCastTick HEAD：每 tick 算伤害的通道/持续类法术。 */
+    @Inject(method = "onServerCastTick", at = @At("HEAD"))
+    private void apoth_serverCastTickSet(Level level, int spellLevel, LivingEntity entity,
+                                         MagicData md, CallbackInfo ci) {
+        SpellCastHooks.clear();
+        if (!(entity instanceof ServerPlayer sp)) return;
+        SpellCastHooks.Context ctx = apoth_resolveCastContext(
+                sp, spellLevel, md.getPlayerCastingItem(), md.getCastingEquipmentSlot(), md.getCastingSpellId());
+        if (ctx != null) SpellCastHooks.set(ctx);
+    }
+
+    @Inject(method = "onServerCastTick", at = @At("RETURN"))
+    private void apoth_serverCastTickClear(Level level, int spellLevel, LivingEntity entity,
+                                           MagicData md, CallbackInfo ci) {
+        SpellCastHooks.clear();
+    }
+
+    /** onRecastFinished HEAD：墙/多锚点等延迟实体在此创建并算伤害。 */
+    @Inject(method = "onRecastFinished", at = @At("HEAD"))
+    private void apoth_recastFinishedSet(ServerPlayer serverPlayer,
+                                         io.redspace.ironsspellbooks.capabilities.magic.RecastInstance recastInstance,
+                                         io.redspace.ironsspellbooks.capabilities.magic.RecastResult recastResult,
+                                         io.redspace.ironsspellbooks.api.spells.ICastDataSerializable castData, CallbackInfo ci) {
+        SpellCastHooks.clear();
+        if (serverPlayer == null) return;
+        MagicData md = MagicData.getPlayerMagicData(serverPlayer);
+        int lvl = recastInstance != null ? recastInstance.getSpellLevel() : md.getCastingSpellLevel();
+        String id = recastInstance != null ? recastInstance.getSpellId() : md.getCastingSpellId();
+        SpellCastHooks.Context ctx = apoth_resolveCastContext(
+                serverPlayer, lvl, md.getPlayerCastingItem(), md.getCastingEquipmentSlot(), id);
+        if (ctx != null) SpellCastHooks.set(ctx);
+    }
+
+    @Inject(method = "onRecastFinished", at = @At("RETURN"))
+    private void apoth_recastFinishedClear(ServerPlayer serverPlayer,
+                                           io.redspace.ironsspellbooks.capabilities.magic.RecastInstance recastInstance,
+                                           io.redspace.ironsspellbooks.capabilities.magic.RecastResult recastResult,
+                                           io.redspace.ironsspellbooks.api.spells.ICastDataSerializable castData, CallbackInfo ci) {
+        SpellCastHooks.clear();
+    }
+
     // ===== 倍率钩子（均以 SpellCastHooks ctx 门控；ctx 由上面三处在对应阶段设置）=====
     // 原作者用 @Redirect(self) 自引用注入从不触发；改为 @Inject(RETURN) 直接改返回值。
     // 冷却由 MagicManagerMixin 在 getEffectiveSpellCooldown 一处统一施加，这里不处理以免双重应用。
@@ -116,8 +161,39 @@ public class CastMixin {
     @Inject(method = "getSpellPower", at = @At("RETURN"), cancellable = true)
     private void apoth_spellPower(int spellLevel, net.minecraft.world.entity.Entity source, CallbackInfoReturnable<Float> cir) {
         var ctx = SpellCastHooks.get();
-        if (ctx == null || ctx.data() == null || ctx.data().dmg() == 1f) return;
-        cir.setReturnValue(cir.getReturnValueF() * ctx.data().dmg());
+        if (ctx == null || ctx.data() == null) return;
+        ReforgeCache.Data d = ctx.data();
+        boolean hasDmg = d.dmg() != 1f;
+        boolean hasSchool = d.school() != 0 && d.schoolBonus() != 1f;
+        if (!hasDmg && !hasSchool) return;
+        float val = cir.getReturnValueF();
+        if (hasDmg) val *= d.dmg();
+        // 学派专精：当前(施法/显示)法术的学派 == 专精学派时,额外乘 schoolBonus。
+        if (hasSchool) {
+            try {
+                net.minecraft.resources.ResourceLocation castId =
+                        ((io.redspace.ironsspellbooks.api.spells.AbstractSpell) (Object) this).getSchoolType().getId();
+                net.minecraft.resources.ResourceLocation focus = apoth_schoolIdToResource(d.school());
+                if (castId != null && castId.equals(focus)) val *= d.schoolBonus();
+            } catch (Throwable ignored) {}
+        }
+        cir.setReturnValue(val);
+    }
+
+    /** 学派 id(1..9) → SchoolRegistry 资源 id（顺序与 SchoolRegistry 一致）。 */
+    private static net.minecraft.resources.ResourceLocation apoth_schoolIdToResource(int id) {
+        switch (id) {
+            case 1: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.FIRE_RESOURCE;
+            case 2: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.ICE_RESOURCE;
+            case 3: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.LIGHTNING_RESOURCE;
+            case 4: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.HOLY_RESOURCE;
+            case 5: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.ENDER_RESOURCE;
+            case 6: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.BLOOD_RESOURCE;
+            case 7: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.EVOCATION_RESOURCE;
+            case 8: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.NATURE_RESOURCE;
+            case 9: return io.redspace.ironsspellbooks.api.registry.SchoolRegistry.ELDRITCH_RESOURCE;
+            default: return null;
+        }
     }
 
     /** 施法时间 ×cast()。 */

@@ -80,8 +80,13 @@ public class ReforgeCache {
     }
 
     public record Data(float dmg, float mana, float cd, float cast, int lvl,
-                       float radius, float duration, int school) {
-        public static final Data DEF = new Data(1, 1, 1, 1, 0, 1, 1, 0);
+                       float radius, float duration, int school, float schoolBonus) {
+        public static final Data DEF = new Data(1, 1, 1, 1, 0, 1, 1, 0, 1);
+
+        /** 8 参便捷构造器：schoolBonus 默认 1（无学派专注加成）。其余词缀 contribute 仍用旧 8 参形式即可。 */
+        public Data(float dmg, float mana, float cd, float cast, int lvl, float radius, float duration, int school) {
+            this(dmg, mana, cd, cast, lvl, radius, duration, school, 1f);
+        }
 
         public CompoundTag write() {
             CompoundTag t = new CompoundTag();
@@ -93,6 +98,7 @@ public class ReforgeCache {
             t.putFloat("r", radius);
             t.putFloat("du", duration);
             t.putInt("sf", school);
+            t.putFloat("sb", schoolBonus);
             return t;
         }
 
@@ -106,13 +112,14 @@ public class ReforgeCache {
                     t.getInt("l"),
                     t.contains("r") ? t.getFloat("r") : 1,
                     t.contains("du") ? t.getFloat("du") : 1,
-                    t.contains("sf") ? t.getInt("sf") : 0
+                    t.contains("sf") ? t.getInt("sf") : 0,
+                    t.contains("sb") ? t.getFloat("sb") : 1
             );
         }
 
         public boolean isDefault() {
             return dmg == 1 && mana == 1 && cd == 1 && cast == 1 && lvl == 0
-                    && radius == 1 && duration == 1 && school == 0;
+                    && radius == 1 && duration == 1 && school == 0 && schoolBonus == 1;
         }
     }
 
@@ -425,6 +432,7 @@ public class ReforgeCache {
         int lv = 0;
         float radius = 1, duration = 1;
         int school = 0;
+        float schoolBonus = 1;
 
         LootRarity rarity = resolveRarity(affixData);
 
@@ -448,6 +456,7 @@ public class ReforgeCache {
                 radius = radius * d2.radius();
                 duration = duration * d2.duration();
                 if (d2.school() != 0) school = d2.school();
+                schoolBonus = schoolBonus * d2.schoolBonus();
             }
         }
 
@@ -470,7 +479,7 @@ public class ReforgeCache {
             ApotheosisSpells.LOGGER.debug("[ReforgeCache] 读取 Gem 异常: {}", t.toString());
         }
 
-        return new Data(d, m, c, ct, lv, radius, duration, school);
+        return new Data(d, m, c, ct, lv, radius, duration, school, schoolBonus);
     }
 
     public static LootRarity resolveRarity(CompoundTag affixData) {

@@ -11,7 +11,8 @@
         "TooltipUtilsMixin",
         "SlotOnTakeMixin",
         "MagicManagerMixin",
-        "SalvagingMenuMixin"
+        "SalvagingMenuMixin",
+        "AoeScaleMixin"
     ],
     "client": [
         "SpellWheelMixin",
