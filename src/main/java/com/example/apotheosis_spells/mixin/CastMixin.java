@@ -130,6 +130,11 @@ public class CastMixin {
         if (serverPlayer == null) return;
         MagicData md = MagicData.getPlayerMagicData(serverPlayer);
         ItemStack item = md.getPlayerCastingItem();
+        // 关键：延迟施法（后续 tick 的 castSpell）时 getPlayerCastingItem 常已被清空（返回 AirItem），
+        // 必须回退到施法装备槽（getCastingEquipmentSlot，例如 spellbook/mainhand）解析法术书/卷轴。
+        if (item == null || item.isEmpty()) {
+            item = resolveCastingStack(ItemStack.EMPTY, md.getCastingEquipmentSlot(), serverPlayer);
+        }
         if (item == null || item.isEmpty()) return;
         ReforgeCache.Data d;
         int idx = -1;
