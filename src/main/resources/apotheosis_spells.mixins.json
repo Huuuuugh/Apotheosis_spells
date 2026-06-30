@@ -12,7 +12,12 @@
         "SlotOnTakeMixin",
         "MagicManagerMixin",
         "SalvagingMenuMixin",
-        "AoeScaleMixin"
+        "AoeScaleMixin",
+        "SpellRadiusFloatMixin",
+        "SpellRadiusIntMixin",
+        "SpellRangeFloatMixin",
+        "SpellRangeStaticMixin",
+        "SpellRangeStatic1ArgMixin"
     ],
     "client": [
         "SpellWheelMixin",
