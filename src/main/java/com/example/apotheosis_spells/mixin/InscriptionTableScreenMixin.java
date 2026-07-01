@@ -115,11 +115,15 @@ public class InscriptionTableScreenMixin {
 
     /**
      * 拦截 getUniqueInfo：spellLevel 已被 apoth_boostDisplayLevel 加成，直接使用即可。
+     * 关键修复：Iron's renderLorePage 传 <b>null</b> caster（字节码 aconst_null）→ 伤害行经 getDamage→getSpellPower
+     * 时读不到玩家的法术强度等属性，抄写台伤害因此比卷轴 tooltip / 真实施法少乘一个玩家 spell_power 倍率
+     * （例：抄写台 63 vs 卷轴 63×1.1=69.3）。这里用当前玩家兜底作 caster，使三者口径一致。
      */
     @Redirect(method = "renderLorePage", at = @At(value = "INVOKE",
             target = "Lio/redspace/ironsspellbooks/api/spells/AbstractSpell;getUniqueInfo(ILnet/minecraft/world/entity/LivingEntity;)Ljava/util/List;"))
     private List<MutableComponent> redirectGetUniqueInfo(AbstractSpell spell, int spellLevel, LivingEntity caster) {
-        return spell.getUniqueInfo(spellLevel, caster);
+        LivingEntity c = caster != null ? caster : net.minecraft.client.Minecraft.getInstance().player;
+        return spell.getUniqueInfo(spellLevel, c);
     }
 
     /**
@@ -171,7 +175,9 @@ public class InscriptionTableScreenMixin {
     private int redirectGetEffectiveCastTime(AbstractSpell spell, int spellLevel, LivingEntity entity) {
         var ctx = SpellCastHooks.get();
         int boostedLevel = spellLevel; // spellLevel 已被 apoth_boostDisplayLevel 加成，勿重复 +lvl
-        int base = spell.getEffectiveCastTime(boostedLevel, entity);
+        // 同 getUniqueInfo：renderLorePage 传 null caster → 不含玩家吟唱缩减属性，与卷轴 tooltip 不一致；用当前玩家兜底。
+        LivingEntity castEntity = entity != null ? entity : net.minecraft.client.Minecraft.getInstance().player;
+        int base = spell.getEffectiveCastTime(boostedLevel, castEntity);
         if (ctx == null || ctx.data() == null || ctx.data().cast() == 1f) {
             ApotheosisSpells.LOGGER.info("{} getEffectiveCastTime: spell={}, originLevel={}, boosted={}, base={}, d.cast=1.0 (no change)",
                     PREFIX, spell.getSpellResource(), spellLevel, boostedLevel, base);
