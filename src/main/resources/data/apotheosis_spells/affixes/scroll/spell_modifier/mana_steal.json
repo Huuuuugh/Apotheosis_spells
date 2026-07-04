@@ -2,11 +2,38 @@
   "type": "apotheosis_spells:mana_steal",
   "modifier": "mana_steal",
   "values": {
-    "common":   {"min": 2,  "steps": 1, "step": 1},
-    "uncommon": {"min": 3,  "steps": 1, "step": 2},
-    "rare":     {"min": 5,  "steps": 1, "step": 3},
-    "epic":     {"min": 8,  "steps": 1, "step": 4},
-    "mythic":   {"min": 12, "steps": 1, "step": 6}
+    "common": {
+      "min": 2,
+      "steps": 1,
+      "step": 1
+    },
+    "uncommon": {
+      "min": 3,
+      "steps": 1,
+      "step": 2
+    },
+    "rare": {
+      "min": 5,
+      "steps": 1,
+      "step": 3
+    },
+    "epic": {
+      "min": 8,
+      "steps": 1,
+      "step": 4
+    },
+    "mythic": {
+      "min": 12,
+      "steps": 1,
+      "step": 6
+    },
+    "ancient": {
+      "min": 12,
+      "steps": 1,
+      "step": 6
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

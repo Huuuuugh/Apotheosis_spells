@@ -3,11 +3,38 @@
   "modifier": "sig_fire",
   "school": "fire",
   "values": {
-    "common":   {"min": 3, "steps": 0, "step": 0},
-    "uncommon": {"min": 4, "steps": 0, "step": 0},
-    "rare":     {"min": 5, "steps": 0, "step": 0},
-    "epic":     {"min": 6, "steps": 0, "step": 0},
-    "mythic":   {"min": 8, "steps": 0, "step": 0}
+    "common": {
+      "min": 3,
+      "steps": 0,
+      "step": 0
+    },
+    "uncommon": {
+      "min": 4,
+      "steps": 0,
+      "step": 0
+    },
+    "rare": {
+      "min": 5,
+      "steps": 0,
+      "step": 0
+    },
+    "epic": {
+      "min": 6,
+      "steps": 0,
+      "step": 0
+    },
+    "mythic": {
+      "min": 8,
+      "steps": 0,
+      "step": 0
+    },
+    "ancient": {
+      "min": 8,
+      "steps": 0,
+      "step": 0
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

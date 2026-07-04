@@ -3,6 +3,8 @@
     "package": "com.example.apotheosis_spells.mixin", "refmap": "apotheosis_spells.refmap.json",
     "mixins": [
         "RegMixin",
+        "LootControllerMixin",
+        "LootRarityRulesMixin",
         "SlotMixin",
         "ReforgeMixin",
         "CastMixin",

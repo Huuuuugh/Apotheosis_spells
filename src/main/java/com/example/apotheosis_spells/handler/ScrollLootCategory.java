@@ -19,6 +19,9 @@ public class ScrollLootCategory {
     public static LootCategory SCROLL;
     public static LootCategory SPELLBOOK_SLOT;
 
+    /** 带命名空间的类别名，避免与其它 Apotheosis 扩展注册的 "scroll" 撞名；全部 JSON 的 types 与 lang 键同步使用。 */
+    public static final String NAME = "apotheosis_spells:scroll";
+
     /**
      * 注册 scroll LootCategory。
      * Scroll 整体可作为 affix 物品被重铸台处理。
@@ -26,7 +29,7 @@ public class ScrollLootCategory {
      */
     public static void register() {
         if (SCROLL == null) {
-            SCROLL = LootCategory.register(null, "scroll",
+            SCROLL = LootCategory.register(null, NAME,
                     (ItemStack stack) -> stack.getItem() instanceof Scroll,
                     new EquipmentSlot[]{EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND});
         }

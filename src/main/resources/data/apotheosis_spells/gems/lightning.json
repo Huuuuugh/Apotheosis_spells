@@ -5,7 +5,7 @@
   "bonuses": [
     {
       "type": "apotheosis:attribute",
-      "gem_class": { "key": "scroll_caster", "types": ["scroll"] },
+      "gem_class": { "key": "scroll_caster", "types": ["apotheosis_spells:scroll"] },
       "attribute": "irons_spellbooks:lightning_spell_power",
       "operation": "ADDITION",
       "values": { "common": 0.05, "uncommon": 0.10, "rare": 0.15, "epic": 0.225, "mythic": 0.30, "ancient": 0.40 }

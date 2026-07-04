@@ -35,14 +35,14 @@ public class SchoolSignatureAffix extends SpellAffix {
     private final int schoolId;
 
     public SchoolSignatureAffix(String m, Map<String, Fn> v, Set<String> t, String school) {
-        super(m, v, t, AffixType.STAT);
+        super(m, v, t, AffixType.POTION);
         this.school = school;
         this.schoolId = Schools.idFromName(school);
     }
 
     @Override
     public boolean canApplyTo(ItemStack stack, LootCategory cat, LootRarity rarity) {
-        if (!types.contains(cat.getName()) || schoolId == 0) return false;
+        if (!types.contains(cat.getName()) || schoolId == 0 || !vals.containsKey(rarityKey(rarity))) return false;
         try {
             if (!(stack.getItem() instanceof Scroll) || !ISpellContainer.isSpellContainer(stack)) return false;
             SpellData sd = ISpellContainer.get(stack).getSpellAtIndex(0);

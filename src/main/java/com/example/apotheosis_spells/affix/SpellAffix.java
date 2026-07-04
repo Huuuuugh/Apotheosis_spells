@@ -49,15 +49,14 @@ public abstract class SpellAffix extends Affix {
         this.types = types;
     }
 
-    @Override
-    public AffixType getType() {
-        return AffixType.STAT;
+    public int getBaseValue(LootRarity r, float lvl) {
+        Fn f = vals.get(rarityKey(r));
+        return f != null ? f.get(lvl) : Mth.floor(lvl);
     }
 
-    public int getBaseValue(LootRarity r, float lvl) {
-        var key = dev.shadowsoffire.apotheosis.adventure.loot.RarityRegistry.INSTANCE.getKey(r).getPath();
-        Fn f = vals.get(key);
-        return f != null ? f.get(lvl) : Mth.floor(lvl);
+    protected static String rarityKey(LootRarity r) {
+        var key = dev.shadowsoffire.apotheosis.adventure.loot.RarityRegistry.INSTANCE.getKey(r);
+        return key != null ? key.getPath() : "";
     }
 
     /**
@@ -77,7 +76,9 @@ public abstract class SpellAffix extends Affix {
 
     @Override
     public boolean canApplyTo(ItemStack stack, LootCategory cat, LootRarity rarity) {
-        return types.contains(cat.getName());
+        // 稀有度必须在 values 里显式定义，否则 JEI 会展示不存在的稀有度组合，
+        // 重铸也会 roll 出无数值定义的档位（getBaseValue 兜底值掩盖问题）。
+        return types.contains(cat.getName()) && vals.containsKey(rarityKey(rarity));
     }
 
     @Override

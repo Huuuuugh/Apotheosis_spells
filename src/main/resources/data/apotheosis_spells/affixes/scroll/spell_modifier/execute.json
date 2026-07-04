@@ -2,11 +2,38 @@
   "type": "apotheosis_spells:execute",
   "modifier": "execute",
   "values": {
-    "common":   {"min": 10, "steps": 1, "step": 5},
-    "uncommon": {"min": 15, "steps": 1, "step": 10},
-    "rare":     {"min": 25, "steps": 1, "step": 15},
-    "epic":     {"min": 40, "steps": 1, "step": 20},
-    "mythic":   {"min": 60, "steps": 1, "step": 40}
+    "common": {
+      "min": 10,
+      "steps": 1,
+      "step": 5
+    },
+    "uncommon": {
+      "min": 15,
+      "steps": 1,
+      "step": 10
+    },
+    "rare": {
+      "min": 25,
+      "steps": 1,
+      "step": 15
+    },
+    "epic": {
+      "min": 40,
+      "steps": 1,
+      "step": 20
+    },
+    "mythic": {
+      "min": 60,
+      "steps": 1,
+      "step": 40
+    },
+    "ancient": {
+      "min": 60,
+      "steps": 1,
+      "step": 40
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

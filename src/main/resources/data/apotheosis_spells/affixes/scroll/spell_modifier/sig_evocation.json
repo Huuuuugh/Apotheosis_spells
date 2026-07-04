@@ -3,11 +3,38 @@
   "modifier": "sig_evocation",
   "school": "evocation",
   "values": {
-    "common":   {"min": 15, "steps": 0, "step": 0},
-    "uncommon": {"min": 20, "steps": 0, "step": 0},
-    "rare":     {"min": 25, "steps": 0, "step": 0},
-    "epic":     {"min": 30, "steps": 0, "step": 0},
-    "mythic":   {"min": 40, "steps": 0, "step": 0}
+    "common": {
+      "min": 15,
+      "steps": 0,
+      "step": 0
+    },
+    "uncommon": {
+      "min": 20,
+      "steps": 0,
+      "step": 0
+    },
+    "rare": {
+      "min": 25,
+      "steps": 0,
+      "step": 0
+    },
+    "epic": {
+      "min": 30,
+      "steps": 0,
+      "step": 0
+    },
+    "mythic": {
+      "min": 40,
+      "steps": 0,
+      "step": 0
+    },
+    "ancient": {
+      "min": 40,
+      "steps": 0,
+      "step": 0
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

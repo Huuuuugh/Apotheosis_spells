@@ -2,11 +2,38 @@
   "type": "apotheosis_spells:lifesteal",
   "modifier": "lifesteal",
   "values": {
-    "common":   {"min": 3,  "steps": 1, "step": 2},
-    "uncommon": {"min": 5,  "steps": 1, "step": 3},
-    "rare":     {"min": 8,  "steps": 1, "step": 4},
-    "epic":     {"min": 12, "steps": 1, "step": 6},
-    "mythic":   {"min": 18, "steps": 1, "step": 7}
+    "common": {
+      "min": 3,
+      "steps": 1,
+      "step": 2
+    },
+    "uncommon": {
+      "min": 5,
+      "steps": 1,
+      "step": 3
+    },
+    "rare": {
+      "min": 8,
+      "steps": 1,
+      "step": 4
+    },
+    "epic": {
+      "min": 12,
+      "steps": 1,
+      "step": 6
+    },
+    "mythic": {
+      "min": 18,
+      "steps": 1,
+      "step": 7
+    },
+    "ancient": {
+      "min": 18,
+      "steps": 1,
+      "step": 7
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

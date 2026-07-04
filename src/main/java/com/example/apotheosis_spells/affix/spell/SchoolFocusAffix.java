@@ -23,7 +23,7 @@ public class SchoolFocusAffix extends SpellAffix {
             Codec.STRING.listOf().xmap(Set::copyOf, s -> s.stream().toList()).fieldOf("types").forGetter(a -> a.types)
     ).apply(i, SchoolFocusAffix::new));
 
-    public SchoolFocusAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.STAT); }
+    public SchoolFocusAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.POTION); }
 
     @Override
     public ReforgeCache.Data contribute(int baseValue) {

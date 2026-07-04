@@ -2,11 +2,38 @@
   "type": "apotheosis_spells:overcharge",
   "modifier": "overcharge",
   "values": {
-    "common":   {"min": 10, "steps": 1, "step": 5},
-    "uncommon": {"min": 15, "steps": 1, "step": 5},
-    "rare":     {"min": 20, "steps": 1, "step": 10},
-    "epic":     {"min": 30, "steps": 1, "step": 10},
-    "mythic":   {"min": 40, "steps": 1, "step": 10}
+    "common": {
+      "min": 10,
+      "steps": 1,
+      "step": 5
+    },
+    "uncommon": {
+      "min": 15,
+      "steps": 1,
+      "step": 5
+    },
+    "rare": {
+      "min": 20,
+      "steps": 1,
+      "step": 10
+    },
+    "epic": {
+      "min": 30,
+      "steps": 1,
+      "step": 10
+    },
+    "mythic": {
+      "min": 40,
+      "steps": 1,
+      "step": 10
+    },
+    "ancient": {
+      "min": 40,
+      "steps": 1,
+      "step": 10
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

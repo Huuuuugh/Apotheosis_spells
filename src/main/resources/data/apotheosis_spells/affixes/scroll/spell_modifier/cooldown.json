@@ -2,11 +2,38 @@
   "type": "apotheosis_spells:cooldown",
   "modifier": "cooldown",
   "values": {
-    "common":   {"min": 5,  "steps": 2, "step": 5},
-    "uncommon": {"min": 5,  "steps": 4, "step": 5},
-    "rare":     {"min": 10, "steps": 4, "step": 5},
-    "epic":     {"min": 10, "steps": 6, "step": 5},
-    "mythic":   {"min": 15, "steps": 7, "step": 5}
+    "common": {
+      "min": 5,
+      "steps": 2,
+      "step": 5
+    },
+    "uncommon": {
+      "min": 5,
+      "steps": 4,
+      "step": 5
+    },
+    "rare": {
+      "min": 10,
+      "steps": 4,
+      "step": 5
+    },
+    "epic": {
+      "min": 10,
+      "steps": 6,
+      "step": 5
+    },
+    "mythic": {
+      "min": 15,
+      "steps": 7,
+      "step": 5
+    },
+    "ancient": {
+      "min": 15,
+      "steps": 7,
+      "step": 5
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

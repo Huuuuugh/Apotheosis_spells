@@ -5,7 +5,7 @@
   "bonuses": [
     {
       "type": "apotheosis:attribute",
-      "gem_class": { "key": "scroll_caster", "types": ["scroll"] },
+      "gem_class": { "key": "scroll_caster", "types": ["apotheosis_spells:scroll"] },
       "attribute": "irons_spellbooks:max_mana",
       "operation": "ADDITION",
       "values": { "common": 20, "uncommon": 40, "rare": 60, "epic": 80, "mythic": 100, "ancient": 120 }

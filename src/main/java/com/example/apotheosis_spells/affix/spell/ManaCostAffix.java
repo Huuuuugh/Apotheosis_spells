@@ -17,7 +17,7 @@ public class ManaCostAffix extends SpellAffix {
             Codec.STRING.listOf().xmap(Set::copyOf, s -> s.stream().toList()).fieldOf("types").forGetter(a -> a.types)
     ).apply(i, ManaCostAffix::new));
 
-    public ManaCostAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.STAT); }
+    public ManaCostAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.POTION); }
 
     @Override
     public ReforgeCache.Data contribute(int baseValue) {

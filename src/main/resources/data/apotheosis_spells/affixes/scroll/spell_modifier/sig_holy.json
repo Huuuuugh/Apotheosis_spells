@@ -3,11 +3,38 @@
   "modifier": "sig_holy",
   "school": "holy",
   "values": {
-    "common":   {"min": 20, "steps": 0, "step": 0},
-    "uncommon": {"min": 30, "steps": 0, "step": 0},
-    "rare":     {"min": 40, "steps": 0, "step": 0},
-    "epic":     {"min": 55, "steps": 0, "step": 0},
-    "mythic":   {"min": 75, "steps": 0, "step": 0}
+    "common": {
+      "min": 20,
+      "steps": 0,
+      "step": 0
+    },
+    "uncommon": {
+      "min": 30,
+      "steps": 0,
+      "step": 0
+    },
+    "rare": {
+      "min": 40,
+      "steps": 0,
+      "step": 0
+    },
+    "epic": {
+      "min": 55,
+      "steps": 0,
+      "step": 0
+    },
+    "mythic": {
+      "min": 75,
+      "steps": 0,
+      "step": 0
+    },
+    "ancient": {
+      "min": 75,
+      "steps": 0,
+      "step": 0
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

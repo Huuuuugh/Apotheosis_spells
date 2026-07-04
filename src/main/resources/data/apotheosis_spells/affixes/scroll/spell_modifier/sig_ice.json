@@ -3,11 +3,38 @@
   "modifier": "sig_ice",
   "school": "ice",
   "values": {
-    "common":   {"min": 40, "steps": 0, "step": 0},
-    "uncommon": {"min": 60, "steps": 0, "step": 0},
-    "rare":     {"min": 80, "steps": 0, "step": 0},
-    "epic":     {"min": 100, "steps": 0, "step": 0},
-    "mythic":   {"min": 120, "steps": 0, "step": 0}
+    "common": {
+      "min": 40,
+      "steps": 0,
+      "step": 0
+    },
+    "uncommon": {
+      "min": 60,
+      "steps": 0,
+      "step": 0
+    },
+    "rare": {
+      "min": 80,
+      "steps": 0,
+      "step": 0
+    },
+    "epic": {
+      "min": 100,
+      "steps": 0,
+      "step": 0
+    },
+    "mythic": {
+      "min": 120,
+      "steps": 0,
+      "step": 0
+    },
+    "ancient": {
+      "min": 120,
+      "steps": 0,
+      "step": 0
+    }
   },
-  "types": ["scroll"]
+  "types": [
+    "apotheosis_spells:scroll"
+  ]
 }

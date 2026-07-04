@@ -17,7 +17,7 @@ public class CastTimeAffix extends SpellAffix {
             Codec.STRING.listOf().xmap(Set::copyOf, s -> s.stream().toList()).fieldOf("types").forGetter(a -> a.types)
     ).apply(i, CastTimeAffix::new));
 
-    public CastTimeAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.STAT); }
+    public CastTimeAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.POTION); }
 
     @Override
     public ReforgeCache.Data contribute(int baseValue) {

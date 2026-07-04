@@ -18,7 +18,7 @@ public class CdSkipAffix extends SpellAffix {
             Codec.STRING.listOf().xmap(Set::copyOf, s -> s.stream().toList()).fieldOf("types").forGetter(a -> a.types)
     ).apply(i, CdSkipAffix::new));
 
-    public CdSkipAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.STAT); }
+    public CdSkipAffix(String m, Map<String, Fn> v, Set<String> t) { super(m, v, t, AffixType.POTION); }
 
     @Override
     public ReforgeCache.Data contribute(int baseValue) { return ReforgeCache.Data.DEF; }
