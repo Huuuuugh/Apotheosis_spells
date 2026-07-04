@@ -2,6 +2,7 @@ package com.example.apotheosis_spells.mixin;
 
 import com.example.apotheosis_spells.affix.spell.CastTimeAffix;
 import com.example.apotheosis_spells.affix.spell.CdSkipAffix;
+import com.example.apotheosis_spells.affix.spell.ChannelEffectAffix;
 import com.example.apotheosis_spells.affix.spell.CooldownAffix;
 import com.example.apotheosis_spells.affix.spell.EchoAffix;
 import com.example.apotheosis_spells.affix.spell.ExecuteAffix;
@@ -9,6 +10,7 @@ import com.example.apotheosis_spells.affix.spell.LifestealAffix;
 import com.example.apotheosis_spells.affix.spell.ManaCostAffix;
 import com.example.apotheosis_spells.affix.spell.ManaStealAffix;
 import com.example.apotheosis_spells.affix.spell.OverchargeAffix;
+import com.example.apotheosis_spells.affix.spell.PostCastEffectAffix;
 import com.example.apotheosis_spells.affix.spell.RecastAffix;
 import com.example.apotheosis_spells.affix.spell.SchoolFocusAffix;
 import com.example.apotheosis_spells.affix.spell.SchoolSignatureAffix;
@@ -52,6 +54,9 @@ public class RegMixin {
         // 事件类特效词条（第三梯队：生存/功能）
         reg.registerCodec(new ResourceLocation("apotheosis_spells", "ward"), WardAffix.C);
         reg.registerCodec(new ResourceLocation("apotheosis_spells", "swiftness"), SwiftnessAffix.C);
+        // 吟唱增益 / 施法增益（通用「施法给任意药水效果」，效果 id/等级/时长由 JSON 配）
+        reg.registerCodec(new ResourceLocation("apotheosis_spells", "channel_effect"), ChannelEffectAffix.C);
+        reg.registerCodec(new ResourceLocation("apotheosis_spells", "postcast_effect"), PostCastEffectAffix.C);
         // 学派签名词条（9 学派共用此 codec，靠 JSON 的 school 字段区分）
         reg.registerCodec(new ResourceLocation("apotheosis_spells", "school_signature"), SchoolSignatureAffix.C);
     }

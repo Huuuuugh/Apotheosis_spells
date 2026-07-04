@@ -8,6 +8,7 @@ import io.redspace.ironsspellbooks.api.events.SpellOnCastEvent;
 import io.redspace.ironsspellbooks.api.magic.MagicData;
 import io.redspace.ironsspellbooks.api.registry.SpellRegistry;
 import io.redspace.ironsspellbooks.api.spells.AbstractSpell;
+import io.redspace.ironsspellbooks.api.spells.CastType;
 import io.redspace.ironsspellbooks.api.spells.ISpellContainer;
 import io.redspace.ironsspellbooks.api.spells.SpellData;
 import io.redspace.ironsspellbooks.api.spells.SpellSlot;
@@ -15,7 +16,9 @@ import io.redspace.ironsspellbooks.api.util.Utils;
 import io.redspace.ironsspellbooks.damage.SpellDamageSource;
 import io.redspace.ironsspellbooks.item.Scroll;
 import io.redspace.ironsspellbooks.item.SpellBook;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
@@ -23,8 +26,13 @@ import net.minecraft.world.entity.MobType;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 「事件类特效」词条的统一结算处。监听 Iron's 的法术事件，从施法者手里的卷轴/书<b>实时解析</b>
@@ -53,6 +61,12 @@ public final class SpellEffectHandler {
     private static final float EVOCATION_REFUND = 0.5f;
     /** 末影签名闪现的最大距离（格）。 */
     private static final double BLINK_DIST = 5.0;
+    /** 吟唱增益每 tick 刷新时给的短时长（tick）——略大于 1 tick，让效果在停止吟唱后自然淡出（约 0.5s）。 */
+    private static final int CHANNEL_REFRESH_TICKS = 10;
+    /** 瞬发法术无吟唱阶段时，吟唱增益兜底施加的时长（tick）。 */
+    private static final int INSTANT_CHANNEL_TICKS = 60;
+    /** 正在吟唱的玩家 → 其正在施放的 spellId。用于检测「吟唱结束」以结算施法增益。仅服务端读写。 */
+    private static final Map<UUID, String> CHANNELING = new ConcurrentHashMap<>();
 
     @SubscribeEvent
     public static void onSpellDamage(SpellDamageEvent event) {
@@ -157,6 +171,15 @@ public final class SpellEffectHandler {
         if (fx.haste() > 0) {
             player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, HASTE_DURATION, fx.haste() - 1, false, true, true));
         }
+        // 吟唱增益 / 施法增益：瞬发法术无吟唱阶段，onPlayerTick 捕捉不到 isCasting()，这里兜底一次性结算。
+        // 持续/蓄力类法术由 onPlayerTick 按吟唱进度结算，故此处按 castType==INSTANT 过滤以免重复施加。
+        if (fx.channel() > 0 || fx.postcast() > 0) {
+            AbstractSpell casted = SpellRegistry.REGISTRY.get().getValue(new ResourceLocation(event.getSpellId()));
+            if (casted != null && casted.getCastType() == CastType.INSTANT) {
+                if (fx.channel() > 0) applyEffect(player, fx.channelEffect(), INSTANT_CHANNEL_TICKS, fx.channel() - 1);
+                if (fx.postcast() > 0) applyEffect(player, fx.postcastEffect(), fx.postcastDur(), fx.postcast() - 1);
+            }
+        }
         // 学派 on-cast 签名效果：末影(虚空步)闪现 / 塑能(奥能涌动)返还法力
         int sig = fx.signature();
         if (sig == 5 && player.getRandom().nextFloat() < fx.signatureValue() / 100f) {
@@ -196,6 +219,47 @@ public final class SpellEffectHandler {
                 return;
             }
         }
+    }
+
+    /**
+     * 吟唱增益（channel）/ 施法增益（postcast）的时机结算（服务端每 tick）：
+     *   - 玩家 {@code isCasting()} 期间：每 tick 用短时长刷新 channel 效果（吟唱/蓄力/引导中持续拥有 buff）；
+     *   - 由「吟唱中 → 不再吟唱」的那一 tick：判定为一次施法结束，施加 postcast 效果（完整时长）。
+     * 瞬发法术不经过吟唱阶段（isCasting 不会持续为真），改由 {@link #onSpellCast} 兜底，见其中 castType==INSTANT 分支。
+     */
+    @SubscribeEvent
+    public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        Player player = event.player;
+        if (player == null || player.level().isClientSide) return;
+
+        MagicData md = MagicData.getPlayerMagicData(player);
+        UUID id = player.getUUID();
+        boolean casting = md != null && md.isCasting();
+
+        if (casting) {
+            String spellId = md.getCastingSpellId();
+            if (spellId == null || spellId.isEmpty()) return;
+            CHANNELING.put(id, spellId);
+            SpellEffects fx = resolveEffects(player, spellId);
+            if (fx.channel() > 0) {
+                applyEffect(player, fx.channelEffect(), CHANNEL_REFRESH_TICKS, fx.channel() - 1);
+            }
+        } else {
+            String prev = CHANNELING.remove(id);
+            if (prev == null) return;
+            SpellEffects fx = resolveEffects(player, prev);
+            if (fx.postcast() > 0) {
+                applyEffect(player, fx.postcastEffect(), fx.postcastDur(), fx.postcast() - 1);
+            }
+        }
+    }
+
+    /** 给玩家施加一个药水效果（隐藏粒子、显示图标）；效果 id 无效则忽略。amplifier 已是 0 基（等级-1）。 */
+    private static void applyEffect(Player player, String effectId, int duration, int amplifier) {
+        MobEffect eff = BuiltInRegistries.MOB_EFFECT.get(new ResourceLocation(effectId));
+        if (eff == null || duration <= 0) return;
+        player.addEffect(new MobEffectInstance(eff, duration, Math.max(0, amplifier), false, false, true));
     }
 
     // ===== 从施法者解析当前法术的特效词条 =====
