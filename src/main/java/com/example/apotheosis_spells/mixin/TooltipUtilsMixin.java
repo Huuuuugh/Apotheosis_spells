@@ -31,9 +31,12 @@ public class TooltipUtilsMixin {
         SpellCastHooks.clear();
         if (stack == null || stack.isEmpty()) return;
         if (!(stack.getItem() instanceof Scroll)) return;
+        // 创造模式拿出的裸卷轴/其它 mod 给的无 NBT 卷轴没有 SpellContainer，直接跳过防 NPE
+        if (!io.redspace.ironsspellbooks.api.spells.ISpellContainer.isSpellContainer(stack)) return;
 
         ReforgeCache.Data data = ReforgeCache.getFromScroll(stack);
         SpellData scrollSpellData = io.redspace.ironsspellbooks.api.spells.ISpellContainer.get(stack).getSpellAtIndex(0);
+        if (scrollSpellData == null || scrollSpellData.getSpell() == null) return;
         SpellCastHooks.set(new SpellCastHooks.Context(stack, player, 0, scrollSpellData.getLevel(), data, scrollSpellData));
 
         ApotheosisSpells.LOGGER.info("{} formatScrollTooltip ENTER: stack={}, data={}", PREFIX, stack.getItem().getClass().getSimpleName(), data);

@@ -99,7 +99,14 @@ public final class SpellEffectHandler {
         }
         if (fx.manaLeech() > 0) {
             MagicData md = MagicData.getPlayerMagicData(player);
-            if (md != null) md.addMana(amount * fx.manaLeech());
+            if (md != null) {
+                md.addMana(amount * fx.manaLeech());
+                // addMana 不主动同步，客户端法力条要等下一次常规同步才动；这里立即推一次
+                if (player instanceof net.minecraft.server.level.ServerPlayer sp) {
+                    io.redspace.ironsspellbooks.setup.PacketDistributor.sendToPlayer(sp,
+                        new io.redspace.ironsspellbooks.network.SyncManaPacket(md));
+                }
+            }
         }
         // 学派 on-hit 签名效果
         applyHitSignature(player, target, amount, sig, fx.signatureValue());
